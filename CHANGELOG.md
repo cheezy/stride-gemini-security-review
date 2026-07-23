@@ -5,6 +5,12 @@ All notable changes to the Stride Security Review extension for Gemini CLI are d
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-07-23
+
+### Fixed
+
+- **The agent-dispatch-failure exit-code contract now matches the procedure (G377: D172).** Ported from the upstream source-of-truth fix (`cheezy/stride-security-review` D170). The Step 6 exit-code table documented exit `2` for an "agent dispatch failure", but the three agent-response-failure branches — Step 4a (diff-mode dispatch), Step 4b (full-mode batch), and Step 4.5 (RCI pass) — only printed a one-line error and "stopped", never running `exit 2`. A `--fail-on` CI gate therefore observed an unspecified exit code (not the documented `2`) when the reviewer returned unparseable JSON. Applying the identical **Option A** resolution: each of the three branches now runs a final `exit 2` via `run_shell_command` after printing its error, mirroring the Step 1 misuse pattern used by every other exit-2 case (`--fail-on`, `--base`, `--considerations`, `--sarif`/`--json` conflict). The exit-code table's `0`/`1`/`2` meanings are unchanged; the exit-code semantics are identical to the corrected CC source, adapted only to Gemini CLI's `run_shell_command` tool vocabulary.
+
 ## [0.1.0] - 2026-07-22
 
 Initial release of the Gemini CLI port of [`cheezy/stride-security-review`](https://github.com/cheezy/stride-security-review).
