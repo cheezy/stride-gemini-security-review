@@ -1,6 +1,6 @@
 {
   "name": "stride-gemini-security-review",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "AI-powered security review for code changes on Stride kanban — the Gemini CLI extension. Semantic-analysis vulnerability detection over a diff or the full tree, seven framework rule packs plus CI/CD and web defense-in-depth coverage, MAESTRO agentic-AI classification, SARIF output, severity gating, and a considerations mode that verifies a task's security_considerations were actually mitigated by the diff.",
   "contextFileName": "GEMINI.md"
 }
