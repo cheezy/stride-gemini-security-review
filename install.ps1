@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Installs gemini-extension.json, GEMINI.md, and the commands/, skills/,
-    agents/, lib/, and fixtures/ directories into your Gemini extensions
+    agents/, lib/, fixtures/ and policies/ directories into your Gemini extensions
     directory. By default installs globally to
     $env:USERPROFILE\.gemini\extensions\stride-gemini-security-review\ so the
     /security-review command is available in all projects. Use -Project to
@@ -84,7 +84,7 @@ try {
     Copy-Item (Join-Path $Src 'GEMINI.md')             -Destination $InstallDir -Force
     $license = Join-Path $Src 'LICENSE'
     if (Test-Path $license) { Copy-Item $license -Destination $InstallDir -Force }
-    foreach ($dir in @('commands', 'skills', 'agents', 'lib', 'fixtures')) {
+    foreach ($dir in @('commands', 'skills', 'agents', 'lib', 'fixtures', 'policies')) {
         $dest = Join-Path $InstallDir $dir
         Copy-Item (Join-Path $Src $dir) -Destination $dest -Recurse -Force
     }

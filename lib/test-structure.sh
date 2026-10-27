@@ -136,6 +136,23 @@ for inst in install.sh install.ps1; do
   exists "$inst" "$inst"
 done
 
+# --- Policies (W2488) ---------------------------------------------------------
+# The security-reviewer subagent's Policy Engine deny rules, and both installers
+# copying the directory (lib/check_agent_contract.sh checks the rules).
+
+printf '\nPolicies\n'
+exists "policies/security-reviewer.toml" "policy security-reviewer.toml"
+if grep -qE '^for dir in .* policies(;| )' "${PLUGIN_ROOT}/install.sh"; then
+  ok "install.sh copies policies/"
+else
+  nope "install.sh does not copy policies/" "install.sh: for dir in ... policies"
+fi
+if grep -qE "^ *foreach \(\\\$dir in @\(.*'policies'" "${PLUGIN_ROOT}/install.ps1"; then
+  ok "install.ps1 copies policies/"
+else
+  nope "install.ps1 does not copy policies/" "install.ps1: foreach (\$dir in @(... 'policies'))"
+fi
+
 # --- Root docs & license ----------------------------------------------------
 
 printf '\nRoot docs\n'

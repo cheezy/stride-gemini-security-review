@@ -1,0 +1,93 @@
+# Gemini CLI Policy Engine rules for this extension's `security-reviewer` subagent.
+#
+# Why this file exists: the agent's `tools:` frontmatter cannot narrow
+# `run_shell_command` to particular commands (a scoped name such as
+# `run_shell_command(git)` fails Gemini CLI's tool-name validation and the agent
+# does not load), so its shell is limited by its written contract in
+# agents/security-reviewer.md ("Operational constraints") and by these rules.
+# The contract is the limit; this file is a tripwire for the plain forms of
+# what the contract forbids.
+#
+# Deny-only, by necessity. Gemini CLI loads `policies/*.toml` from an extension
+# root into tier 2 and drops every `allow` rule and every rule whose `modes`
+# names `yolo` (@google/gemini-cli-core 0.65.0, dist/src/policy/config.js,
+# loadExtensionPolicies). So no rule here allows anything and none names
+# `modes`: a rule with no `modes` applies in every approval mode, yolo
+# included. Priority 900 in tier 2 is 2.900, above yolo's allow-all (1.998);
+# user and admin policies, `--allowed-tools` and an interactive "Always allow"
+# rank above it.
+#
+# Every rule is scoped with `subagent = "security-reviewer"`, so the main
+# session and other agents are unaffected. A shell rule's `commandRegex` is
+# matched against `"command":"<the command, JSON-escaped>`; `[^\x00]*?` keeps a
+# match inside that one value, because the engine bounds each top-level
+# argument with a NUL byte. Compound commands are split and each part is
+# checked again, and `bash -c` wrappers are unwrapped and checked: a deny on
+# any part denies the whole command. No pattern may put a quantifier right
+# after a group, or the loader drops the rule (isSafeRegExp).
+#
+# Deliberately not denied: rm, mv, cp, mkdir, mktemp, tar, find and
+# redirection, because the contract's reproduction creates and removes its own
+# temporary copy with them and a pattern cannot tell that copy from the
+# repository; `git diff` with arguments (`git diff HEAD`, `git diff -- <path>`),
+# which the contract forbids against the working tree but a pattern cannot
+# separate from the allowed commit-to-commit form; and obfuscated forms
+# (quoted or variable command names, interpreters). The contract covers those.
+# Known false denials: a read-only git command one of whose arguments is a
+# listed verb as a separate word, and a listed package tool followed later in
+# the same command by an install verb. Both only make the agent grade by
+# reading.
+
+# git commands that change the repository, its index, its refs or its config.
+[[rule]]
+toolName = "run_shell_command"
+subagent = "security-reviewer"
+commandRegex = '[^\x00]*?(?:(?<![A-Za-z0-9_.-])|(?<=\\[nt]))git(?= |\\t)[^\x00]*?(?<= |\\t)(add|am|apply|bisect|branch|bundle|checkout|checkout-index|cherry-pick|clean|clone|commit|commit-tree|config|credential|daemon|difftool|fast-import|fetch|filter-branch|format-patch|gc|hash-object|init|lfs|maintenance|merge|mergetool|mv|notes|pack-refs|prune|pull|push|read-tree|rebase|reflog|remote|repack|replace|reset|restore|revert|rm|send-email|sparse-checkout|stash|submodule|switch|symbolic-ref|tag|update-index|update-ref|worktree|write-tree)(?![A-Za-z0-9_./-])'
+decision = "deny"
+priority = 900
+denyMessage = "security-reviewer is read-only on the working tree: this git command changes the repository. Nothing ran; grade by reading."
+
+# A bare git diff, which rewrites .git/index.
+[[rule]]
+toolName = "run_shell_command"
+subagent = "security-reviewer"
+commandRegex = '[^\x00]*?(?:(?<![A-Za-z0-9_.-])|(?<=\\[nt]))git(?= |\\t)[^\x00]*?(?<= |\\t)diff(?=[ ]*("|\\n|;|&|\|))'
+decision = "deny"
+priority = 900
+denyMessage = "security-reviewer never runs a bare git diff against the working tree, which rewrites .git/index. Nothing ran; use git diff --cached or a commit-to-commit diff, or grade by reading."
+
+# A git option that writes a file.
+[[rule]]
+toolName = "run_shell_command"
+subagent = "security-reviewer"
+commandRegex = '[^\x00]*?(?:(?<![A-Za-z0-9_.-])|(?<=\\[nt]))git(?= |\\t)[^\x00]*?(?<= |\\t)--output(?![A-Za-z0-9_-])'
+decision = "deny"
+priority = 900
+denyMessage = "security-reviewer uses no git option that writes a file. Nothing ran; grade by reading."
+
+# Network clients and package runners that fetch code.
+[[rule]]
+toolName = "run_shell_command"
+subagent = "security-reviewer"
+commandRegex = '[^\x00]*?(?:(?<![A-Za-z0-9_.-])|(?<=\\[nt]))(curl|wget|ssh|scp|sftp|rsync|nc|ncat|netcat|socat|telnet|ftp|tftp|aria2c|gh|npx|bunx|pnpx|uvx)(?![A-Za-z0-9_./-])'
+decision = "deny"
+priority = 900
+denyMessage = "security-reviewer contacts no external service and nothing a probe does leaves the machine. Nothing ran; grade by reading."
+
+# Package installs and dependency fetches.
+[[rule]]
+toolName = "run_shell_command"
+subagent = "security-reviewer"
+commandRegex = '[^\x00]*?(?:(?<![A-Za-z0-9_.-])|(?<=\\[nt]))(npm|pnpm|yarn|bun|pip|pip3|pipx|uv|poetry|gem|bundle|cargo|go|brew|apt|apt-get|dnf|yum|apk|mix|composer|conda|dotnet)(?= |\\t)[^\x00]*?(?<= |\\t)(install|i|ci|add|get|fetch|update|upgrade|sync|require|restore|tap|deps\.get|deps\.update|archive\.install|local\.hex|local\.rebar)(?![A-Za-z0-9_./-])'
+decision = "deny"
+priority = 900
+denyMessage = "security-reviewer installs nothing and fetches no dependency. Nothing ran; grade by reading."
+
+# write_file anywhere but an accepted SECURITY_RESULT_PATH.
+[[rule]]
+toolName = "write_file"
+subagent = "security-reviewer"
+argsPattern = '\x00"file_path":"(?![^"\x00]*/\.stride/\.security-[A-Za-z0-9_-]+-r[0-9]+\.json"\x00)'
+decision = "deny"
+priority = 900
+denyMessage = "security-reviewer writes only its result file at an accepted SECURITY_RESULT_PATH. Nothing was written; return the document inline."

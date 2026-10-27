@@ -9,7 +9,9 @@
 #
 # The eval invocation check has no PowerShell mirror: what it pins is how the
 # bash runner, lib/run_eval.sh, invokes gemini. Without bash or jq it is
-# reported as skipped, not passed.
+# reported as skipped, not passed. The offline policy pattern check
+# (check_policy_patterns.mjs) runs through node when node is on PATH and is
+# likewise reported as skipped without it.
 #
 # Usage:
 #   pwsh -NoProfile -File lib\test-all.ps1
@@ -57,6 +59,16 @@ if ($bash -and $jq) {
     if ($LASTEXITCODE -ne 0) { $failed = $true }
 } else {
     Write-Host 'skipped: check_eval_invocation.sh needs bash and jq on PATH'
+}
+
+Write-Host ''
+Write-Host '=== policy patterns (offline, node) ==='
+$node = Get-Command node -ErrorAction SilentlyContinue
+if ($node) {
+    & $node.Source (Join-Path $ScriptDir 'check_policy_patterns.mjs') | Out-Host
+    if ($LASTEXITCODE -ne 0) { $failed = $true }
+} else {
+    Write-Host 'skipped: check_policy_patterns.mjs needs node on PATH'
 }
 
 Write-Host ''

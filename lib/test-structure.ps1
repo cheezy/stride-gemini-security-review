@@ -153,6 +153,20 @@ foreach ($inst in @('install.sh', 'install.ps1')) {
     Test-Exists $inst $inst
 }
 
+# --- Policies (W2488) ---------------------------------------------------------
+# The security-reviewer subagent's Policy Engine deny rules, and both installers
+# copying the directory (lib/check_agent_contract.ps1 checks the rules).
+
+Write-Host ''
+Write-Host 'Policies'
+Test-Exists 'policies/security-reviewer.toml' 'policy security-reviewer.toml'
+$instSh = Get-Content -LiteralPath (Join-Path $PluginRoot 'install.sh')
+if (@($instSh | Where-Object { $_ -match '^for dir in .* policies(;| )' }).Count -gt 0) { Pass 'install.sh copies policies/' }
+else { Fail 'install.sh does not copy policies/' 'install.sh: for dir in ... policies' }
+$instPs = Get-Content -LiteralPath (Join-Path $PluginRoot 'install.ps1')
+if (@($instPs | Where-Object { $_ -match "^ *foreach \(\`$dir in @\(.*'policies'" }).Count -gt 0) { Pass 'install.ps1 copies policies/' }
+else { Fail 'install.ps1 does not copy policies/' 'install.ps1: foreach ($dir in @(... ''policies''))' }
+
 # --- Root docs & license ----------------------------------------------------
 
 Write-Host ''
