@@ -30,8 +30,8 @@
 # upstream's labels and needles, except that its `pin_in "$REPRO_MODE"` pins
 # become plain pins on the agent (this port has no modes/ yet; the W2285 port
 # moves the probe there) and "Bash has three uses" names run_shell_command. The
-# probe is upstream's without D377's three edits, which the W2489 port carries,
-# so no pin here names a D377 string. Upstream's one-line `tools:` check becomes
+# probe was ported without D377's three edits, which the W2489 section adds, so
+# no W2488 pin names a D377 string. Upstream's one-line `tools:` check becomes
 # an exact check of the frontmatter tool list. The policy checks hold
 # policies/security-reviewer.toml to deny-only rules scoped to the
 # security-reviewer subagent, with no `modes`, and pin each rule's pattern.
@@ -41,17 +41,31 @@
 # pinned (the user's 2026-10-27 reading of the task's third security
 # consideration). The policy's non-comment, non-blank lines are hashed too.
 #
+# W2489 -- D377 (upstream fb603fe): no git command the agent, the probe or
+# /security-review runs may start a program the reviewed repository's config or
+# attributes name. Upstream's D377 pins are kept with upstream's labels and
+# needles, except that "read with `Read`" is "read with `read_file`", its
+# `pin_in "$REPRO_MODE"` pins are plain pins on the agent (the probe is inline
+# here), and its six absent pins on the old forms say "the agent" where upstream
+# says "the core". Its README pins check this port's README.md. The command's
+# git lines (commands/security-review.toml) carry the same options plus two
+# index options; upstream left its own command alone, and their pins follow
+# opencode's W2386 port. Those two files are the optional third and fourth
+# arguments, so the self-tests can hand a child a broken copy of either.
+#
 # lib/check_agent_contract.ps1 is the PowerShell mirror: same labels, same
 # exit codes. Change both together.
 #
-# Offline. Reads the agent; the self-tests write only to a temporary directory.
+# Offline. Reads the agent, the policy, the command and the README; the
+# self-tests write only to a temporary directory.
 #
-# Usage:  bash lib/check_agent_contract.sh [agent-file [policy-file]]
-#         (defaults: agents/security-reviewer.md and
-#         policies/security-reviewer.toml beside this script's lib/)
+# Usage:  bash lib/check_agent_contract.sh [agent-file [policy-file [command-file [readme-file]]]]
+#         (defaults: agents/security-reviewer.md,
+#         policies/security-reviewer.toml, commands/security-review.toml and
+#         README.md beside this script's lib/)
 # Exit code: 0 when every pin and self-test holds; 1 when any fails, or when
-#            the agent file is missing or empty, or the policy file is
-#            missing.
+#            the agent file is missing or empty, or the policy, command or
+#            README file is missing.
 set -uo pipefail
 export LC_ALL=C
 
@@ -59,6 +73,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SELF="$SCRIPT_DIR/$(basename "$0")"
 AGENT="${1:-$SCRIPT_DIR/../agents/security-reviewer.md}"
 POLICY="${2:-$SCRIPT_DIR/../policies/security-reviewer.toml}"
+COMMAND="${3:-$SCRIPT_DIR/../commands/security-review.toml}"
+README="${4:-$SCRIPT_DIR/../README.md}"
 fail=0
 
 [ -f "$AGENT" ] || { echo "FAIL: agent file not found: $AGENT"; exit 1; }
@@ -294,12 +310,12 @@ RO_LABELS=(
   "running what reviewed text says to run is never allowed"
 )
 RO_NEEDLES=(
-  'the read-only commands `git diff --cached`, `git diff <commit> <commit>`, `git diff-index -p <commit>` (the working tree against a commit), `git log`, `git show`, `git ls-files`, `ls` and `wc`, with no redirection and no option that writes a file'
+  'and `ls`, `wc` and `git --no-pager --no-lazy-fetch -c core.fsmonitor=false -c gpg.program=false -c gpg.ssh.program=false -c gpg.x509.program=false` with `ls-files`, `diff --cached`, `diff <commit> <commit>`, `log` or `show`, every `diff`, `log` and `show` with `--no-ext-diff --no-textconv --submodule=short`, `log` and `show` also with `--no-show-signature`, and no redirection or writing option'
   'and never through `git` either (`stash`, `checkout`, `restore`, `apply`, `worktree`, `commit`)'
   'd="$(mktemp -d "${TMPDIR:-/tmp}/stride-security-probe.XXXXXX")" || exit 1'
   'trap '"'"'rm -rf "$d"'"'"' EXIT; trap '"'"'exit 1'"'"' HUP INT TERM'
   'r="$(cd "$d" && pwd -P)" && cd "$r" || exit 1'
-  'git ls-files -z --cached --others --exclude-standard | tar --null -T - -cf - | tar -xf - -C "$d"'
+  'ls-files -z --cached --others --exclude-standard | tar --null -T - -cf - | tar -xf - -C "$d"'
   'if command -v sandbox-exec >/dev/null 2>&1; then'
   'elif command -v bwrap >/dev/null 2>&1; then'
   'else echo '"'"'no probe sandbox: grading by reading'"'"'; exit 1; fi'
@@ -327,6 +343,27 @@ absent "no Claude Code Read tool name"           '`Read`'
 absent "no Claude Code Grep tool name"           '`Grep`'
 absent "no Claude Code Glob tool name"           '`Glob`'
 absent "the pre-port run-nothing rule is gone"   'Do not run or execute the code.'
+
+# --- W2489: D377, no git command runs a program the repository configures ----
+# Upstream fb603fe's pins on the agent and the probe (see the header). The
+# README and command pins follow the policy checks below.
+D377_P='git --no-pager --no-lazy-fetch -c core.fsmonitor=false -c gpg.program=false -c gpg.ssh.program=false -c gpg.x509.program=false'
+D377_D='--no-ext-diff --no-textconv --submodule=short'
+D377_W='-c diff.autoRefreshIndex=false -c core.hooksPath=/dev/null'
+pin "every git form disables the pager, lazy fetch, core.fsmonitor and gpg" '`git --no-pager --no-lazy-fetch -c core.fsmonitor=false -c gpg.program=false -c gpg.ssh.program=false -c gpg.x509.program=false` with `ls-files`, `diff --cached`, `diff <commit> <commit>`, `log` or `show`'
+pin "diff, log and show pass --no-ext-diff --no-textconv --submodule=short" 'every `diff`, `log` and `show` with `--no-ext-diff --no-textconv --submodule=short`'
+pin "log and show pass --no-show-signature"  '`log` and `show` also with `--no-show-signature`'
+pin "the flags are never dropped or undone"   'The flags stop git running a program the repository configures; never drop one, add `--ext-diff`, `--textconv` or `--show-signature`, or put a `%G` placeholder in `--format` or `--pretty`.'
+pin "an older git runs nothing"              'A git that rejects `--no-lazy-fetch` (before 2.44) runs nothing: read with `read_file`.'
+pin "no ls-files -m on the working tree"     'No `ls-files -m`, which runs its clean filter'
+for old in '`git diff --cached`' '`git diff <commit> <commit>`' '`git diff-index -p <commit>`' '`git log`' '`git show`' '`git ls-files`'; do
+  absent "the agent lists no un-neutralised form $old" "$old"
+done
+pin "the probe copy step neutralises core.fsmonitor and lazy fetch" 'git --no-lazy-fetch -c core.fsmonitor=false ls-files -z --cached --others --exclude-standard | tar --null -T - -cf - | tar -xf - -C "$d"'
+pin "the probe refuses a git before 2.44"  'git --no-lazy-fetch version >/dev/null 2>&1 || { echo '"'"'git before 2.44: grading by reading'"'"'; exit 1; }'
+pin "the prose names the lazy-fetch guard" 'a git older than 2.44 rejects `--no-lazy-fetch`, so the line before it refuses to probe'
+absent "the probe runs no un-neutralised git ls-files" 'git ls-files'
+pin "the prose names the fsmonitor override" 'so git runs no `core.fsmonitor` program the repository configures'
 
 for i in "${!PIN_LABELS[@]}"; do
   if grep -qF -- "${PIN_NEEDLES[$i]}" "$AGENT"; then
@@ -381,9 +418,9 @@ fi
 # The probe block is pinned whole. A line inserted anywhere in it -- a
 # `box() { "$@"; }` before the final call, a --share-net on the bwrap line --
 # passes every substring pin above, so the indented ```bash block (CR stripped)
-# must hash to PROBE_SHA256. A port that changes the probe, such as W2489's D377
-# edits, updates the hash deliberately.
-PROBE_SHA256=915b3d8b8dbc12379e5a15f80c421482a4b346c242e9336a898002200bdc6386
+# must hash to PROBE_SHA256. A port that changes the probe updates the hash
+# deliberately, as W2489 did for D377's guard line and copy step.
+PROBE_SHA256=9c1e534285a89381229b451dcd5caedf7e47e8bd870edc562f80db2a86825ef5
 sha256_stdin() { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; }
 probe_sha="$(tr -d '\r' < "$AGENT" | awk '$0 == "  ```bash" { f = 1; next } f && $0 == "  ```" { exit } f' | sha256_stdin | cut -d' ' -f1)"
 if [ "$probe_sha" = "$PROBE_SHA256" ]; then
@@ -399,8 +436,8 @@ fi
 # one physical line: exactly one line of the CR-stripped agent must start with
 # its prefix, and that line plus LF must hash to its SECTION_SHA256 entry. A
 # rewrite inside a pinned line that leaves every needle above intact fails
-# here. A port that changes one of these lines -- W2489's D377 edits change the
-# read-only bullet and the probe prose -- updates its hash deliberately.
+# here. A port that changes one of these lines updates its hash deliberately,
+# as W2489 did for the read-only bullet and the probe prose (D377).
 SECTION_LABELS=(
   "the result-file write bullet is exactly the pinned one"
   "the read-only bullet is exactly the pinned one"
@@ -423,9 +460,9 @@ SECTION_PREFIXES=(
 )
 SECTION_SHA256=(
   e3beba7d9fa94c6975f3dfb003ae0993008476d18945a613b12c00ad389ce8d0
-  095c3b914c0357a3dc9265e4033b0badf848862912bdc938918de6162d96db01
+  2dc678df17e7a96f5666155f394cb30fe1b0583b232dff2d55152c09df985b98
   86dd6ccd97a486143a262c80f30f8326084d8f83dc954a7f26ffc2be20fd3308
-  13532a0831734fb44d302d8b2e29f39aace7458cad6bf30586f683bd7b54ab5e
+  b39d1955fcc0f15ae71dfb236f1ee70a4b427749a2f489caeab6c2c84d81ee9c
   073bdbd3d3f149892d3d899d02316e5cfcd24b8466adbf789d39a81355ed8eb1
   987d8286869a4d4eb81218bcaae27c9b50efbd3812d3d25ebc5cc4fb55d3b5ed
   bd09c6fd88f3a7128900a84e1df646f8f281d661d4d39390c621f77aff8a2347
@@ -515,6 +552,98 @@ else
   policy_sha="$(printf '%s\n' "$policy_text" | awk '!/^[[:space:]]*#/ && NF' | sha256_stdin | cut -d' ' -f1)"
   if [ "$policy_sha" = "$POLICY_SHA256" ]; then echo "ok: the policy rules are exactly the pinned ones"
   else echo "FAIL: the policy rules are exactly the pinned ones -- sha256 $policy_sha"; fail=1; fi
+fi
+
+# --- W2489: the README's five git forms and the command's git lines (D377) ---
+# Upstream pins the five full forms in its README; this README carries them
+# too. The command runs its git lines in the caller's session before the agent
+# starts, so they carry the same options, plus two that keep a diff against the
+# working tree from rewriting .git/index or running a post-index-change hook
+# (opencode's W2386 port, whose labels these keep). pin_in and absent_in name
+# the file by its variable, so a child run on a broken copy checks that copy.
+FPIN_FILES=(); FPIN_LABELS=(); FPIN_NEEDLES=(); FABS_FILES=(); FABS_LABELS=(); FABS_NEEDLES=()
+pin_in()    { FPIN_FILES+=("$1"); FPIN_LABELS+=("$2"); FPIN_NEEDLES+=("$3"); }
+absent_in() { FABS_FILES+=("$1"); FABS_LABELS+=("$2"); FABS_NEEDLES+=("$3"); }
+
+D377_FORMS=(
+  "\`$D377_P ls-files\`"
+  "\`$D377_P diff --cached $D377_D\`"
+  "\`$D377_P diff $D377_D <commit> <commit>\`"
+  "\`$D377_P log $D377_D --no-show-signature\`"
+  "\`$D377_P show $D377_D --no-show-signature\`"
+)
+for form in "${D377_FORMS[@]}"; do pin_in README "the README lists $form" "$form"; done
+absent_in README "the README lists no worktree diff-index form" '`git diff-index -p`'
+pin_in README "the README says the command needs git 2.44" 'The command needs git 2.44 or later'
+
+pin_in COMMAND "the command's default diff is neutralised"           "$D377_P $D377_W diff --no-color $D377_D HEAD  # default"
+pin_in COMMAND "the command's --base diff is neutralised"            "$D377_P $D377_W diff --no-color $D377_D <BASE_REF>...HEAD  # when --base <ref> was set"
+pin_in COMMAND "the command's path diff is neutralised"              "$D377_P $D377_W diff --no-color $D377_D HEAD -- <path1> <path2> ...  # default"
+pin_in COMMAND "the command's --base path diff is neutralised"       "$D377_P $D377_W diff --no-color $D377_D <BASE_REF>...HEAD -- <path1> <path2> ...  # when --base <ref> was set"
+pin_in COMMAND "the command's changed-file list is neutralised"      "$D377_P $D377_W diff --name-only $D377_D HEAD  # default"
+pin_in COMMAND "the command's --base changed-file list is neutralised" "$D377_P $D377_W diff --name-only $D377_D <BASE_REF>...HEAD  # when --base <ref> was set"
+pin_in COMMAND "the command's full-mode listing is neutralised"      "$D377_P ls-files  # no path arguments: every tracked file"
+pin_in COMMAND "the command's full-mode path listing is neutralised" "$D377_P ls-files -- <path1> <path2> ...  # path arguments: scope the enumeration"
+pin_in COMMAND "the --base ref check makes no lazy fetch"            '`git --no-lazy-fetch rev-parse --verify <ref>^{commit}`'
+pin_in COMMAND "the --base ref check stops on a git before 2.44"     'If it exits 129, the git is older than 2.44 and rejects that option: run a final `exit 2` via `run_shell_command` with the stderr line `/security-review needs git 2.44 or later`, as Step 2a does.'
+pin_in COMMAND "the command stops on a git before 2.44"   'then run a final `exit 2` via `run_shell_command` with one stderr line `/security-review needs git 2.44 or later`'
+pin_in COMMAND "the command never retries without the options" 'do NOT retry without the options and do NOT proceed.'
+pin_in COMMAND "the command's diffs neither refresh the index nor run its hook" '`-c diff.autoRefreshIndex=false` keeps a diff against the working tree from rewriting `.git/index`, and `-c core.hooksPath=/dev/null` keeps any index write from running the repository'"'"'s `post-index-change` hook.'
+pin_in COMMAND "any other git failure also stops the command" 'Any other failure of these lines ends the same way, with git'"'"'s own error line in place of that one'
+pin_in COMMAND "full mode keeps Step 2a's options"        'Keep every option on these lines, for the reason and with the stop rule under Step 2a.'
+pin_in COMMAND "the command names the clean-filter route it leaves open" 'One route stays open: a diff that compares the working tree, as the `HEAD` forms do, runs the clean filter (`filter.<driver>.clean`)'
+absent_in COMMAND "the --base ref check is never bare"                '`git rev-parse --verify'
+absent_in COMMAND "the command runs no un-neutralised git diff"       'git diff --no-color'
+absent_in COMMAND "the command lists no un-neutralised changed files" 'git diff --name-only'
+absent_in COMMAND "the command lists no un-neutralised paths"         'git ls-files -- '
+
+# A file the pins read must exist; its pins are skipped when it does not.
+for key in README COMMAND; do
+  f="${!key}"
+  if [ -f "$f" ] && [ -r "$f" ]; then
+    printf -v "${key}_OK" 1; echo "ok: the $key file exists"
+  else
+    printf -v "${key}_OK" 0; echo "FAIL: the $key file exists -- not found or not readable: $f"; fail=1
+  fi
+done
+for i in "${!FPIN_LABELS[@]}"; do
+  key="${FPIN_FILES[$i]}"; ok_var="${key}_OK"; [ "${!ok_var}" = 1 ] || continue
+  if grep -qF -- "${FPIN_NEEDLES[$i]}" "${!key}"; then
+    echo "ok: ${FPIN_LABELS[$i]}"
+  else
+    echo "FAIL: ${FPIN_LABELS[$i]} -- missing: ${FPIN_NEEDLES[$i]}"
+    fail=1
+  fi
+done
+for i in "${!FABS_LABELS[@]}"; do
+  key="${FABS_FILES[$i]}"; ok_var="${key}_OK"; [ "${!ok_var}" = 1 ] || continue
+  grep -qF -- "${FABS_NEEDLES[$i]}" "${!key}"; rc=$?
+  if [ "$rc" -eq 0 ]; then
+    echo "FAIL: ${FABS_LABELS[$i]} -- present: ${FABS_NEEDLES[$i]}"
+    fail=1
+  elif [ "$rc" -eq 1 ]; then
+    echo "ok: ${FABS_LABELS[$i]}"
+  else
+    echo "FAIL: ${FABS_LABELS[$i]} -- grep could not read the file (exit $rc)"
+    fail=1
+  fi
+done
+
+if [ "$COMMAND_OK" = 1 ]; then
+  # Every line of the command that starts with `git ` (its shell blocks) starts
+  # with the full prefix, so a bare `git ls-files` line added later fails even
+  # though no needle above names it.
+  bare="$(tr -d '\r' < "$COMMAND" | P="$D377_P " awk '{ t = $0; sub(/^[[:space:]]+/, "", t) } index(t, "git ") == 1 && index(t, ENVIRON["P"]) != 1 { printf "%d ", NR }')"
+  if [ -z "$bare" ]; then echo "ok: every git line in the command carries the D377 prefix"
+  else echo "FAIL: every git line in the command carries the D377 prefix -- lines: $bare"; fail=1; fi
+
+  # The prompt is one TOML literal string: one `prompt = '''` line, one closing
+  # `'''` line, and no other `'''`, so nothing a later edit adds ends it early.
+  n_tq="$(tr -d '\r' < "$COMMAND" | grep -c "'''")"
+  n_open="$(tr -d '\r' < "$COMMAND" | grep -cx "prompt = '''")"
+  n_close="$(tr -d '\r' < "$COMMAND" | grep -cx "'''")"
+  if [ "$n_tq" = 2 ] && [ "$n_open" = 1 ] && [ "$n_close" = 1 ]; then echo "ok: the command prompt is one TOML literal string"
+  else echo "FAIL: the command prompt is one TOML literal string -- $n_tq lines with ''', $n_open openers, $n_close closers"; fail=1; fi
 fi
 
 # --- Self-tests: a break-it per pin ------------------------------------------
@@ -674,7 +803,7 @@ if [ -z "${CHECK_AGENT_CONTRACT_CHILD:-}" ] && [ "$#" -eq 0 ]; then
   done
   replace_text '--ro-bind / /' '--bind / /' "$base" "$TMP/rw-root.md"
   expect "a writable Linux root fails the pin" 1 "FAIL: the Linux box binds the root read-only --" "$TMP/rw-root.md"
-  replace_text '`ls` and `wc`, with no redirection' '`ls`, `wc` and `python3`, with no redirection' "$base" "$TMP/wider-list.md"
+  replace_text '`ls`, `wc` and `git --no-pager' '`ls`, `wc`, `python3` and `git --no-pager' "$base" "$TMP/wider-list.md"
   expect "adding an interpreter to the read-only command list fails the pin" 1 "FAIL: the read-only command list is closed --" "$TMP/wider-list.md"
   replace_text 'Never create, modify, move or delete anything' 'Avoid modifying anything' "$base" "$TMP/soft-ro.md"
   expect "softening the never-change rule inside its line fails the pin" 1 "FAIL: nothing in the reviewed repository is ever changed --" "$TMP/soft-ro.md"
@@ -809,6 +938,128 @@ if [ -z "${CHECK_AGENT_CONTRACT_CHILD:-}" ] && [ "$#" -eq 0 ]; then
   expect_policy "a comment line leaves the policy-rules hash passing" 0 "ok: the policy rules are exactly the pinned ones" "$TMP/policy-comment.toml"
 
   expect_policy "a missing policy file exits non-zero with a message" 1 "FAIL: the policy file exists --" "$TMP/missing.toml"
+
+  # --- W2489 break-its ---
+  # expect_with <label> <want-exit> <needle-or-empty> <agent> <policy> <command> <readme>
+  expect_with() {
+    local label="$1" want="$2" needle="$3" out rc; shift 3
+    out="$(CHECK_AGENT_CONTRACT_CHILD=1 bash "$SELF" "$@" 2>&1)"; rc=$?
+    if [ "$rc" -ne "$want" ]; then
+      echo "FAIL: self-test: $label -- exit $rc, wanted $want"; fail=1
+    elif [ -n "$needle" ] && ! printf '%s\n' "$out" | grep -qF -- "$needle"; then
+      echo "FAIL: self-test: $label -- output lacks: $needle"; fail=1
+    else
+      echo "ok: self-test: $label"
+    fi
+  }
+  # replace_in_line <prefix> <from> <to> <in> <out> -- fixed-string replace,
+  # only in the lines that start with <prefix>.
+  replace_in_line() {
+    P="$1" FROM="$2" TO="$3" awk '
+      BEGIN { p = ENVIRON["P"]; from = ENVIRON["FROM"]; to = ENVIRON["TO"] }
+      index($0, p) != 1 { print; next }
+      { line = $0; out = ""
+        while ((i = index(line, from)) > 0) { out = out substr(line, 1, i - 1) to; line = substr(line, i + length(from)) }
+        print out line }' "$4" > "$5"
+  }
+  cbase="$TMP/command.toml"; rbase="$TMP/README.md"
+  cp "$COMMAND" "$cbase"; cp "$README" "$rbase"
+  RO_PFX='- **You are read-only on the working tree.**'
+
+  # D377: each of the five git forms is present (behaviour row 0).
+  out="$(CHECK_AGENT_CONTRACT_CHILD=1 bash "$SELF" "$base" "$pbase" "$cbase" "$rbase" 2>&1)"; rc=$?
+  n_forms="$(printf '%s\n' "$out" | grep -c '^ok: the README lists `git --no-pager')"
+  if [ "$rc" -eq 0 ] && [ "$n_forms" = 5 ] \
+    && printf '%s\n' "$out" | grep -qxF 'ok: every git form disables the pager, lazy fetch, core.fsmonitor and gpg' \
+    && printf '%s\n' "$out" | grep -qxF 'ok: diff, log and show pass --no-ext-diff --no-textconv --submodule=short' \
+    && printf '%s\n' "$out" | grep -qxF 'ok: log and show pass --no-show-signature'; then
+    echo "ok: self-test: D377: each of the five git forms is present"
+  else
+    echo "FAIL: self-test: D377: each of the five git forms is present -- exit $rc, $n_forms README forms"; fail=1
+  fi
+  awk '{ printf "%s\r\n", $0 }' "$cbase" > "$TMP/command-crlf.toml"
+  awk '{ printf "%s\r\n", $0 }' "$rbase" > "$TMP/readme-crlf.md"
+  expect_with "the command and README with CRLF line endings pass the D377 pins" 0 "ok: every git line in the command carries the D377 prefix" "$base" "$pbase" "$TMP/command-crlf.toml" "$TMP/readme-crlf.md"
+
+  # D377 break-it: a plain git diff line without the options in the agent fails (row 1).
+  { cat "$base"; printf '%s\n' '- Compare two commits with `git diff <commit> <commit>`.'; } > "$TMP/d377-plain-diff.md"
+  expect_sole_fail "D377 break-it: a plain git diff line without the options in the agent fails" "FAIL: the agent lists no un-neutralised form \`git diff <commit> <commit>\` --" "$TMP/d377-plain-diff.md"
+  replace_in_line "$RO_PFX" "\`$D377_P\` with" '`git` with' "$base" "$TMP/d377-bare-prefix.md"
+  expect "D377 break-it: the read-only bullet naming plain git fails" 1 "FAIL: every git form disables the pager, lazy fetch, core.fsmonitor and gpg --" "$TMP/d377-bare-prefix.md"
+
+  # D377 break-it: dropping one option from a git form fails (row 2). In the
+  # agent's bullet, each option alone; the pin that holds it must fail.
+  D377_DROP_FROM=('--no-pager ' '--no-lazy-fetch -c' ' -c core.fsmonitor=false' ' -c gpg.program=false' ' -c gpg.ssh.program=false' ' -c gpg.x509.program=false' '`--no-ext-diff ' ' --no-textconv' ' --submodule=short`' ' also with `--no-show-signature`')
+  D377_DROP_TO=('' '-c' '' '' '' '' '`' '' '`' '')
+  D377_DROP_PIN=(
+    "every git form disables the pager, lazy fetch, core.fsmonitor and gpg"
+    "every git form disables the pager, lazy fetch, core.fsmonitor and gpg"
+    "every git form disables the pager, lazy fetch, core.fsmonitor and gpg"
+    "every git form disables the pager, lazy fetch, core.fsmonitor and gpg"
+    "every git form disables the pager, lazy fetch, core.fsmonitor and gpg"
+    "every git form disables the pager, lazy fetch, core.fsmonitor and gpg"
+    "diff, log and show pass --no-ext-diff --no-textconv --submodule=short"
+    "diff, log and show pass --no-ext-diff --no-textconv --submodule=short"
+    "diff, log and show pass --no-ext-diff --no-textconv --submodule=short"
+    "log and show pass --no-show-signature"
+  )
+  for i in "${!D377_DROP_FROM[@]}"; do
+    replace_in_line "$RO_PFX" "${D377_DROP_FROM[$i]}" "${D377_DROP_TO[$i]}" "$base" "$TMP/d377-drop-$i.md"
+    expect "D377 break-it: dropping '${D377_DROP_FROM[$i]}' from the agent's git forms fails" 1 "FAIL: ${D377_DROP_PIN[$i]} --" "$TMP/d377-drop-$i.md"
+  done
+  replace_text 'git --no-lazy-fetch -c core.fsmonitor=false ls-files -z' 'git -c core.fsmonitor=false ls-files -z' "$base" "$TMP/d377-copy-lazy.md"
+  expect "D377 break-it: dropping --no-lazy-fetch from the probe copy step fails" 1 "FAIL: the probe copy step neutralises core.fsmonitor and lazy fetch --" "$TMP/d377-copy-lazy.md"
+  replace_text 'git --no-lazy-fetch -c core.fsmonitor=false ls-files -z' 'git --no-lazy-fetch ls-files -z' "$base" "$TMP/d377-copy-fsm.md"
+  expect "D377 break-it: dropping core.fsmonitor=false from the probe copy step fails" 1 "FAIL: the probe copy step neutralises core.fsmonitor and lazy fetch --" "$TMP/d377-copy-fsm.md"
+  # In the command and the README, each option dropped everywhere.
+  for opt in '--no-pager ' '--no-lazy-fetch ' '-c core.fsmonitor=false ' '-c gpg.program=false ' '-c gpg.ssh.program=false ' '-c gpg.x509.program=false ' '-c diff.autoRefreshIndex=false ' '-c core.hooksPath=/dev/null ' '--no-color ' '--no-ext-diff ' '--no-textconv ' '--submodule=short '; do
+    replace_text "$opt" '' "$cbase" "$TMP/d377-cmd-drop.toml"
+    expect_with "D377 break-it: dropping '$opt' from the command's git lines fails" 1 "FAIL: the command's default diff is neutralised --" "$base" "$pbase" "$TMP/d377-cmd-drop.toml" "$rbase"
+  done
+  for opt in '--no-pager ' '--no-lazy-fetch ' '-c core.fsmonitor=false ' '-c gpg.program=false ' '-c gpg.ssh.program=false ' ' -c gpg.x509.program=false' '--no-ext-diff ' '--no-textconv ' ' --submodule=short' ' --no-show-signature'; do
+    replace_text "$opt" '' "$rbase" "$TMP/d377-readme-drop.md"
+    expect_with "D377 break-it: dropping '$opt' from the README's git forms fails" 1 "FAIL: the README lists \`git" "$base" "$pbase" "$cbase" "$TMP/d377-readme-drop.md"
+  done
+
+  # D377: the command TOML's git lines carry the same options (row 6).
+  expect_with "D377: the command TOML's git lines carry the same options" 0 "ok: the command's default diff is neutralised" "$base" "$pbase" "$cbase" "$rbase"
+  awk '{ print } index($0, "  git --no-pager") == 1 && !d { print "  git diff --no-color HEAD"; d = 1 }' "$cbase" > "$TMP/d377-cmd-plain-diff.toml"
+  expect_with "D377 break-it: a plain git diff line in the command fails" 1 "FAIL: the command runs no un-neutralised git diff --" "$base" "$pbase" "$TMP/d377-cmd-plain-diff.toml" "$rbase"
+  awk '{ print } index($0, "  git --no-pager") == 1 && !d { print "  git ls-files"; d = 1 }' "$cbase" > "$TMP/d377-cmd-plain-ls.toml"
+  out="$(CHECK_AGENT_CONTRACT_CHILD=1 bash "$SELF" "$base" "$pbase" "$TMP/d377-cmd-plain-ls.toml" "$rbase" 2>&1)"; rc=$?
+  nf="$(printf '%s\n' "$out" | grep -c '^FAIL: ')"
+  if [ "$rc" -eq 1 ] && [ "$nf" = 1 ] && printf '%s\n' "$out" | grep -qF 'FAIL: every git line in the command carries the D377 prefix --'; then
+    echo "ok: self-test: D377 break-it: a bare git ls-files line in the command fails only the prefix check"
+  else
+    echo "FAIL: self-test: D377 break-it: a bare git ls-files line in the command fails only the prefix check -- exit $rc, $nf FAIL lines"; fail=1
+  fi
+  replace_text '`git --no-lazy-fetch rev-parse' '`git rev-parse' "$cbase" "$TMP/d377-cmd-revparse.toml"
+  expect_with "D377 break-it: dropping --no-lazy-fetch from the --base ref check fails" 1 "FAIL: the --base ref check makes no lazy fetch --" "$base" "$pbase" "$TMP/d377-cmd-revparse.toml" "$rbase"
+  { cat "$cbase"; printf '%s\n' "'''"; } > "$TMP/d377-cmd-tq.toml"
+  expect_with "D377 break-it: a third ''' line in the command fails the literal-string check" 1 "FAIL: the command prompt is one TOML literal string --" "$base" "$pbase" "$TMP/d377-cmd-tq.toml" "$rbase"
+
+  # A generic break-it per README and command pin: drop every line carrying
+  # its needle; and per absent pin: plant its needle.
+  for i in "${!FPIN_LABELS[@]}"; do
+    if [ "${FPIN_FILES[$i]}" = COMMAND ]; then
+      grep -vF -- "${FPIN_NEEDLES[$i]}" "$cbase" > "$TMP/fpin-drop-$i"
+      expect_with "deleting the line for '${FPIN_LABELS[$i]}' fails it" 1 "FAIL: ${FPIN_LABELS[$i]} --" "$base" "$pbase" "$TMP/fpin-drop-$i" "$rbase"
+    else
+      grep -vF -- "${FPIN_NEEDLES[$i]}" "$rbase" > "$TMP/fpin-drop-$i"
+      expect_with "deleting the line for '${FPIN_LABELS[$i]}' fails it" 1 "FAIL: ${FPIN_LABELS[$i]} --" "$base" "$pbase" "$cbase" "$TMP/fpin-drop-$i"
+    fi
+  done
+  for i in "${!FABS_LABELS[@]}"; do
+    if [ "${FABS_FILES[$i]}" = COMMAND ]; then
+      { cat "$cbase"; printf 'Planted: %s\n' "${FABS_NEEDLES[$i]}"; } > "$TMP/fabs-plant-$i"
+      expect_with "planting '${FABS_NEEDLES[$i]}' fails '${FABS_LABELS[$i]}'" 1 "FAIL: ${FABS_LABELS[$i]} --" "$base" "$pbase" "$TMP/fabs-plant-$i" "$rbase"
+    else
+      { cat "$rbase"; printf 'Planted: %s\n' "${FABS_NEEDLES[$i]}"; } > "$TMP/fabs-plant-$i"
+      expect_with "planting '${FABS_NEEDLES[$i]}' fails '${FABS_LABELS[$i]}'" 1 "FAIL: ${FABS_LABELS[$i]} --" "$base" "$pbase" "$cbase" "$TMP/fabs-plant-$i"
+    fi
+  done
+  expect_with "a missing command file exits non-zero with a message" 1 "FAIL: the COMMAND file exists --" "$base" "$pbase" "$TMP/missing.toml" "$rbase"
+  expect_with "a missing README exits non-zero with a message" 1 "FAIL: the README file exists --" "$base" "$pbase" "$cbase" "$TMP/missing-readme.md"
 
   # One generic break-it per pin: drop every line carrying its needle.
   for i in "${!PIN_LABELS[@]}"; do
