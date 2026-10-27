@@ -23,7 +23,7 @@
 # W2482 -- W2285 (upstream 6f91613): the agent is a core plus packs/ and modes/
 # read on demand from ${extensionPath}. Pins on text that moved into a mode file
 # read that file (the key RESULT_MODE, REPRO_MODE or CONS_MODE in $FilePins and
-# $SectionPins); Test-W2285 bounds the core at 10240-20480 bytes and checks the
+# $SectionPins); Test-W2285 bounds the core at 10240-18432 bytes and checks the
 # pack and mode files, the loading table, agents/ and each pack's SHA-256, as
 # the W2482 section of check_agent_contract.sh does.
 #
@@ -32,6 +32,11 @@
 # pins each block whole by the SHA-256 of its ```text fence body ($OptInSha256),
 # as the W2483 block-hash check of check_agent_contract.sh does; the command,
 # which Gemini CLI does not hydrate, carries no ${extensionPath}, @{ or !{.
+#
+# W2484 -- W2286 (upstream e1a2415): Test-W2286 checks both frontmatters'
+# shape and keys, the agent's dispatch name, a 150-400 byte bound on each
+# description and each description's triggers ($DescPins), as the W2484
+# section of check_agent_contract.sh does; Test-W2285's ceiling is 18432.
 #
 # Offline. Reads the agent, the policy, the command, the README, the skill, the
 # three mode files and the extension root; the self-tests write only to a
@@ -95,7 +100,6 @@ $AgentPins = @(
     ,@('a failed write says so and goes inline', ('result: NOT WRITTEN ' + $EmDash + ' <one-line reason>'))
     ,@('no path keeps the inline document', ('**No path, a rejected path, or `rci_pass` mode ' + $Arrow + ' nothing changes.**'))
     ,@('the one do-not-edit carve-out', 'the one carve-out is the result file at an accepted `SECURITY_RESULT_PATH`')
-    ,@('the description names the result file', 'or, when the caller supplies SECURITY_RESULT_PATH, written to that file with a short summary returned.')
     ,@('the output schema defers to the result file', 'Return one fenced ```json document, unless an accepted `SECURITY_RESULT_PATH` takes it')
     ,@('the carve-out is one file, written once', 'written once under `.stride/`')
     ,@('write_file is in the agent tools', '  - write_file')
@@ -895,8 +899,8 @@ function Test-Tag($T) {
 function Test-W2285([string]$agentText, [string]$root) {
     $out = @()
     $coreBytes = [Text.Encoding]::UTF8.GetByteCount($agentText)
-    if ($coreBytes -ge 10240 -and $coreBytes -le 20480) { $out += "ok: the core is $coreBytes bytes (10240-20480)" }
-    else { $out += "FAIL: the core is $coreBytes bytes, outside 10240-20480" }
+    if ($coreBytes -ge 10240 -and $coreBytes -le 18432) { $out += "ok: the core is $coreBytes bytes (10240-18432)" }
+    else { $out += "FAIL: the core is $coreBytes bytes, outside 10240-18432" }
     $a = LF $agentText
     foreach ($pair in @(@('packs', $Packs), @('modes', $Modes))) {
         foreach ($name in $pair[1]) {
@@ -962,6 +966,115 @@ function Test-W2285([string]$agentText, [string]$root) {
     return ,$out
 }
 
+# --- W2484: W2286, the two always-loaded descriptions (upstream e1a2415) ------
+# As the W2484 section of check_agent_contract.sh: each frontmatter has the
+# shape YAML reads and its keys (the agent's are name, description and tools,
+# not model, and its tools: key holds a YAML list), the agent keeps the name
+# Stride dispatches, each description is 150-400 bytes (UTF-8, newlines
+# removed) and carries its triggers, read from the description itself.
+$DescPins = @(
+    ,@('AGENT', 'the agent description says when to use it', 'Use this agent to security-review')
+    ,@('AGENT', 'the agent description names its three inputs', 'a diff, whole files, or a diff plus a task''s security_considerations')
+    ,@('AGENT', 'the agent description says it gates a merge', 'before merge')
+    ,@('AGENT', 'the agent description names its command', '/security-review')
+    ,@('AGENT', 'the agent description names Stride', 'and Stride.')
+    ,@('SKILL', 'the skill description fires before a merge or PR', 'Use when about to merge or push a PR')
+)
+foreach ($surface in @('authentication', 'authorization', 'cryptography', 'user input handling', 'secrets management',
+                       'database queries', 'shell-outs', 'file uploads', 'redirects', 'response rendering')) {
+    $DescPins += ,@('SKILL', "the skill description names $surface", $surface)
+}
+$DescPins += ,@('SKILL', 'the skill description fires on a reviewer''s request', 'when a human reviewer asks for a security check')
+$DescPins += ,@('SKILL', 'the skill description names the command', '/security-review')
+$DescPins += ,@('SKILL', 'the skill description names the agent', 'security-reviewer agent')
+
+# Get-FmLines <text> -- @{ Lines; Closed }: the lines after an opening `---`
+# on line 1, up to the closing `---` (Closed) or the end of the text.
+function Get-FmLines([string]$text) {
+    $ls = (LF $text) -split "`n"
+    $o = @(); $closed = $false
+    if ($ls.Count -gt 0 -and $ls[0] -ceq '---') {
+        for ($i = 1; $i -lt $ls.Count; $i++) {
+            if ($ls[$i] -ceq '---') { $closed = $true; break }
+            $o += $ls[$i]
+        }
+    }
+    return @{ Lines = $o; Closed = $closed }
+}
+# Get-DescriptionOf <text> -- the description text (a plain scalar or a | block).
+function Get-DescriptionOf([string]$text) {
+    $o = @(); $b = $false
+    foreach ($l in (Get-FmLines $text).Lines) {
+        if ($l -cmatch '^description: *\|$') { $b = $true; continue }
+        if ($b -and $l.StartsWith('  ', [StringComparison]::Ordinal)) { $o += $l.Substring(2); continue }
+        if ($b) { break }
+        if ($l.StartsWith('description: ', [StringComparison]::Ordinal)) { $o += $l.Substring(13); break }
+    }
+    return ($o -join "`n")
+}
+function Test-FmShape([string]$text, [string]$label, [string[]]$keys) {
+    $fm = Get-FmLines $text
+    if (-not $fm.Closed) { return ,@("FAIL: $label frontmatter -- no closing --- fence") }
+    $out = @(); $bad = @(); $seen = @{}; $blk = $false; $lst = $false
+    foreach ($l in $fm.Lines) {
+        if ($l -cmatch '^([a-z_]+:) *\|$') {
+            $blk = $true; $lst = $false; $k = $Matches[1]
+            if ($seen.ContainsKey($k)) { $bad += "duplicate key $k" } else { $seen[$k] = 1 }
+            continue
+        }
+        if ($blk -and $l -cmatch '^  [^ ]') { continue }
+        if ($lst -and $l -cmatch '^  - [^ ]') { continue }
+        if ($l -cmatch '^([a-z_]+:)( |$)') {
+            $blk = $false; $lst = $false; $k = $Matches[1]
+            if ($seen.ContainsKey($k)) { $bad += "duplicate key $k" } else { $seen[$k] = 1 }
+            $v = $l -creplace '^[a-z_]+: *', ''
+            if ($v -eq '') { $lst = $true }
+            if ($v.Contains(': ') -or $v.Contains(' #') -or $v -cmatch '^[\]\[{}>|*&!%@?:#-]') { $bad += "plain value YAML would misread: $k" }
+            continue
+        }
+        $bad += 'not a key or block line: ' + $l.Substring(0, [Math]::Min(40, $l.Length))
+    }
+    if ($bad.Count -gt 0) { $out += "FAIL: $label frontmatter -- $($bad -join ';')" }
+    else { $out += "ok: $label frontmatter has the shape YAML reads" }
+    foreach ($k in $keys) {
+        if (@($fm.Lines | Where-Object { $_.StartsWith("${k}:", [StringComparison]::Ordinal) }).Count -gt 0) { $out += "ok: $label frontmatter has $k" }
+        else { $out += "FAIL: $label frontmatter -- missing key $k" }
+    }
+    return ,$out
+}
+function Test-FmLine([string]$text, [string]$label, [string]$line) {
+    if (@((Get-FmLines $text).Lines | Where-Object { $_ -ceq $line }).Count -gt 0) { return ,@("ok: $label") }
+    return ,@("FAIL: $label -- no frontmatter line: $line")
+}
+function Test-DescBytes([string]$text, [string]$label) {
+    $n = [Text.Encoding]::UTF8.GetByteCount(((Get-DescriptionOf $text) -replace "`n", ''))
+    if ($n -ge 150 -and $n -le 400) { return ,@("ok: the $label description is $n bytes (150-400)") }
+    return ,@("FAIL: the $label description is $n bytes, outside 150-400")
+}
+function Test-W2286($T) {
+    $out = @()
+    $a = $T['AGENT']; $s = $T['SKILL']
+    $out += Test-FmShape $a 'the agent' @('name', 'description', 'tools')
+    if ($null -ne $s) { $out += Test-FmShape $s 'the skill' @('name', 'description') }
+    $out += Test-FmLine $a 'the agent keeps the name Stride dispatches' 'name: security-reviewer'
+    $out += Test-DescBytes $a 'agent'
+    $desc = @{ AGENT = (Get-DescriptionOf $a) }
+    if ($null -ne $s) { $desc['SKILL'] = (Get-DescriptionOf $s) }
+    foreach ($p in ($DescPins | Where-Object { $_[0] -eq 'AGENT' })) {
+        if ($desc['AGENT'].Contains($p[2])) { $out += "ok: $($p[1])" } else { $out += "FAIL: $($p[1]) -- missing from the description: $($p[2])" }
+    }
+    if ($desc['AGENT'].Contains('/stride-security-review:')) { $out += 'FAIL: the agent description names no Claude Code command -- in the description: /stride-security-review:' }
+    else { $out += 'ok: the agent description names no Claude Code command' }
+    if ($null -ne $s) {
+        $out += Test-FmLine $s 'the skill keeps its name' 'name: security-review-essentials'
+        $out += Test-DescBytes $s 'skill'
+        foreach ($p in ($DescPins | Where-Object { $_[0] -eq 'SKILL' })) {
+            if ($desc['SKILL'].Contains($p[2])) { $out += "ok: $($p[1])" } else { $out += "FAIL: $($p[1]) -- missing from the description: $($p[2])" }
+        }
+    }
+    return ,$out
+}
+
 # Test-Contract <texts> <paths> <policy> <root> -- every check, in-process.
 # <texts> maps AGENT, the three mode keys, README, COMMAND and SKILL to file
 # text ($null when the file is missing, empty or unreadable).
@@ -991,6 +1104,7 @@ function Test-Contract($T, $P, [string]$policy, [string]$root) {
     $out += Test-LineHashes $T $FileSectionPins
     if ($null -ne $T['COMMAND']) { $out += Test-OptInBlocks $T['COMMAND'] }
     $out += Test-Tag $T
+    $out += Test-W2286 $T
     return ,$out
 }
 
@@ -1408,9 +1522,13 @@ if (-not $env:CHECK_AGENT_CONTRACT_CHILD -and -not $CustomPath) {
         # Row 1: the core bound.
         $phoenix = [IO.File]::ReadAllText((Join-Path (Join-Path $RootPath 'packs') 'phoenix.md'), [Text.Encoding]::UTF8)
         $big = $baseText + $phoenix
-        Expect 'W2285 break-it: a pack pasted back into the core fails the core bound' 1 ('FAIL: the core is ' + [Text.Encoding]::UTF8.GetByteCount($big) + ' bytes, outside 10240-20480') $big
+        Expect 'W2285 break-it: a pack pasted back into the core fails the core bound' 1 ('FAIL: the core is ' + [Text.Encoding]::UTF8.GetByteCount($big) + ' bytes, outside 10240-18432') $big
         $smallBytes = [Text.Encoding]::UTF8.GetBytes($baseText)[0..9999]
-        Expect 'W2285 break-it: a core under 10240 bytes fails the core bound' 1 'FAIL: the core is 10000 bytes, outside 10240-20480' ([Text.Encoding]::UTF8.GetString($smallBytes))
+        Expect 'W2285 break-it: a core under 10240 bytes fails the core bound' 1 'FAIL: the core is 10000 bytes, outside 10240-18432' ([Text.Encoding]::UTF8.GetString($smallBytes))
+        # W2484 lowered the ceiling to 18432: exactly 18432 bytes pass, one more fails.
+        $coreLen = [Text.Encoding]::UTF8.GetByteCount($baseText)
+        Expect 'W2484: a core of exactly 18432 bytes passes the core bound' 0 'ok: the core is 18432 bytes (10240-18432)' ($baseText + ('x' * (18432 - $coreLen - 1)) + "`n")
+        Expect 'W2484 break-it: a core of 18433 bytes fails the core bound' 1 'FAIL: the core is 18433 bytes, outside 10240-18432' ($baseText + ('x' * (18433 - $coreLen - 1)) + "`n")
         # Row 2: the pack list.
         $r = New-Root 'w2285-nopack'; Remove-Item -LiteralPath (Join-Path (Join-Path $r 'packs') 'phoenix.md')
         Expect-Root 'W2285 break-it: a deleted pack fails the pack list' 1 'FAIL: packs/phoenix.md missing or empty' $r
@@ -1471,6 +1589,66 @@ if (-not $env:CHECK_AGENT_CONTRACT_CHILD -and -not $CustomPath) {
         Expect-SoleFail-M 'W2483 break-it: restoring the MAESTRO layer reference heading fails' 'FAIL: the MAESTRO layer reference subsection is gone --' 'COMMAND' (Replace-Line $cText '#### Opt-in directive blocks' '#### MAESTRO layer reference')
         Expect-Each-M ("W2483 break-it: $ext in the command fails") @("FAIL: the command carries no $ext --", 'FAIL: Step 4 names the agent''s schema --') 'COMMAND' ($cText.Replace('`agents/security-reviewer.md` **Output schema**', ('`' + $ext + '/agents/security-reviewer.md` **Output schema**')))
         Expect-Each-M 'W2483 break-it: an @{ file injection in the command fails' @('FAIL: the command carries no @{ file injection --', 'FAIL: the Step 4 schema sentence is exactly the pinned one -- found 0 lines') 'COMMAND' ($cText.Replace('Dispatch behavior depends on `FULL_MODE` from Step 1.', 'Dispatch behavior depends on `FULL_MODE` from Step 1 (see @{modes/considerations.md}).'))
+
+        # --- W2484 break-its (W2286) ---
+        # Set-Desc <key> <text> -- the shipped text of <key>'s file with its
+        # description replaced by <text>, in the file's own form: the agent's
+        # one | block line, the skill's plain scalar.
+        function Set-Desc([string]$key, [string]$d) {
+            $ls = $BT[$key] -split "`n"; $p = $false; $done = $false
+            for ($k = 0; $k -lt $ls.Count; $k++) {
+                if ($key -eq 'AGENT') {
+                    if ($p) { $ls[$k] = '  ' + $d; $p = $false; continue }
+                    if ($ls[$k] -ceq 'description: |') { $p = $true }
+                } elseif (-not $done -and $ls[$k].StartsWith('description: ', [StringComparison]::Ordinal)) {
+                    $ls[$k] = 'description: ' + $d; $done = $true
+                }
+            }
+            return ($ls -join "`n")
+        }
+        # Pad-To <text> <bytes> -- <text>, a space and x up to exactly <bytes> bytes.
+        function Pad-To([string]$t, [int]$n) {
+            $t = $t + ' '
+            while ([Text.Encoding]::UTF8.GetByteCount($t) -lt $n) { $t += 'x' }
+            return $t
+        }
+        $agentDesc = (Get-DescriptionOf $baseText) -replace "`n", ''
+        $skillDesc = (Get-DescriptionOf $sText) -replace "`n", ''
+        $agentDescBytes = [Text.Encoding]::UTF8.GetByteCount($agentDesc)
+        Expect 'the shipped agent passes every W2286 check' 0 "ok: the agent description is $agentDescBytes bytes (150-400)" $baseText
+        Expect 'the agent with CRLF line endings passes the W2286 checks' 0 'ok: the agent frontmatter has the shape YAML reads' $crlf
+        Expect 'W2286: a 400-byte agent description passes the bound' 0 'ok: the agent description is 400 bytes (150-400)' (Set-Desc 'AGENT' (Pad-To $agentDesc 400))
+        Expect-SoleFail-M 'W2286 break-it: a 401-byte agent description fails' 'FAIL: the agent description is 401 bytes, outside 150-400' 'AGENT' (Set-Desc 'AGENT' (Pad-To $agentDesc 401))
+        Expect-M 'W2286: a 150-byte agent description passes the bound' 1 'ok: the agent description is 150 bytes (150-400)' 'AGENT' (Set-Desc 'AGENT' ('a' * 150))
+        Expect-M 'W2286 break-it: a 149-byte agent description fails' 1 'FAIL: the agent description is 149 bytes, outside 150-400' 'AGENT' (Set-Desc 'AGENT' ('a' * 149))
+        Expect-M 'W2286: a 400-byte skill description passes the bound' 0 'ok: the skill description is 400 bytes (150-400)' 'SKILL' (Set-Desc 'SKILL' (Pad-To $skillDesc 400))
+        Expect-SoleFail-M 'W2286 break-it: a 401-byte skill description fails' 'FAIL: the skill description is 401 bytes, outside 150-400' 'SKILL' (Set-Desc 'SKILL' (Pad-To $skillDesc 401))
+        Expect-M 'W2286: a 150-byte skill description passes the bound' 1 'ok: the skill description is 150 bytes (150-400)' 'SKILL' (Set-Desc 'SKILL' ('a' * 150))
+        Expect-M 'W2286 break-it: a 149-byte skill description fails' 1 'FAIL: the skill description is 149 bytes, outside 150-400' 'SKILL' (Set-Desc 'SKILL' ('a' * 149))
+        Expect-M 'W2286: fifty em dashes (150 bytes, 50 characters) pass the bound' 1 'ok: the agent description is 150 bytes (150-400)' 'AGENT' (Set-Desc 'AGENT' ($EmDash * 50))
+        $t = $agentDesc + ' '
+        while ([Text.Encoding]::UTF8.GetByteCount($t) + 3 -le 400) { $t += $EmDash }
+        while ([Text.Encoding]::UTF8.GetByteCount($t) -lt 401) { $t += 'x' }
+        Expect-SoleFail-M 'W2286 break-it: a 401-byte agent description of fewer than 400 characters fails' 'FAIL: the agent description is 401 bytes, outside 150-400' 'AGENT' (Set-Desc 'AGENT' $t)
+        Expect 'W2286 break-it: a duplicate key in the agent frontmatter fails' 1 'FAIL: the agent frontmatter -- duplicate key name:' (Dup-Line $baseText 'name: ')
+        Expect-SoleFail-M 'W2286 break-it: a plain value holding '' #'' fails the shape check' 'FAIL: the agent frontmatter -- plain value YAML would misread: temperature:' 'AGENT' (Replace-Line $baseText 'temperature: ' 'temperature: 0.2 # warm')
+        Expect-M 'W2286 break-it: a plain value holding '': '' in the skill fails the shape check' 1 'FAIL: the skill frontmatter -- plain value YAML would misread: name:' 'SKILL' (Replace-Line $sText 'name: security-review-essentials' 'name: security-review: essentials')
+        Expect-SoleFail-M 'W2286 break-it: a stray line in the agent frontmatter fails the shape check' 'FAIL: the agent frontmatter -- not a key or block line: not yaml at all' 'AGENT' (Insert-After-First $baseText 'name: ' 'not yaml at all')
+        Expect-M 'W2286 break-it: a folded description block fails the shape check' 1 'FAIL: the agent frontmatter -- ' 'AGENT' (Replace-Line $baseText 'description: |' 'description: >')
+        $noTools = ((($baseText -split "`n") | Where-Object { $_ -cne 'tools:' -and -not $_.StartsWith('  - ', [StringComparison]::Ordinal) }) -join "`n")
+        Expect-M 'W2286 break-it: an agent frontmatter with no tools fails' 1 'FAIL: the agent frontmatter -- missing key tools' 'AGENT' $noTools
+        $ul = $baseText -split "`n"; $uo = @(); $ud = $false
+        for ($k = 0; $k -lt $ul.Count; $k++) { if ($k -gt 0 -and -not $ud -and $ul[$k] -ceq '---') { $ud = $true; continue }; $uo += $ul[$k] }
+        Expect-M 'W2286 break-it: an unclosed agent frontmatter fails' 1 'FAIL: the agent frontmatter -- no closing --- fence' 'AGENT' ($uo -join "`n")
+        Expect-M 'W2286 break-it: a skill frontmatter with no name fails' 1 'FAIL: the skill frontmatter -- missing key name' 'SKILL' (Remove-Lines $sText 'name: ')
+        Expect-SoleFail-M 'W2286 break-it: renaming the agent fails the dispatch-name check' 'FAIL: the agent keeps the name Stride dispatches -- no frontmatter line: name: security-reviewer' 'AGENT' (Replace-Line $baseText 'name: security-reviewer' 'name: security-auditor')
+        Expect-SoleFail-M 'W2286 break-it: renaming the skill fails its name check' 'FAIL: the skill keeps its name -- no frontmatter line: name: security-review-essentials' 'SKILL' (Replace-Line $sText 'name: security-review-essentials' 'name: security-essentials')
+        # Each trigger pin: delete its needle from the description alone.
+        foreach ($dp in $DescPins) {
+            $src = $agentDesc; if ($dp[0] -eq 'SKILL') { $src = $skillDesc }
+            Expect-M "W2286 break-it: dropping '$($dp[2])' from the description fails '$($dp[1])'" 1 "FAIL: $($dp[1]) --" $dp[0] (Set-Desc $dp[0] $src.Replace($dp[2], ''))
+        }
+        Expect-M 'W2286 break-it: the Claude Code command name in the agent description fails' 1 'FAIL: the agent description names no Claude Code command --' 'AGENT' (Set-Desc 'AGENT' $agentDesc.Replace('/security-review', '/stride-security-review:security-review'))
 
         # One generic break-it per agent pin: drop every line carrying its
         # needle. And one per agent absent pin: plant its needle.

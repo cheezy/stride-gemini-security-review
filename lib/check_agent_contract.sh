@@ -102,7 +102,7 @@
 # modes/ that it reads on demand from ${extensionPath}. Every pin on text that
 # moved now reads the mode file that holds it (pin_in RESULT_MODE, REPRO_MODE or
 # CONS_MODE; the SECTION and RO tables name their file), and the break-its plant
-# their edit in that file. The W2482 section bounds the core at 10240-20480
+# their edit in that file. The W2482 section bounds the core at 10240-18432
 # bytes, checks the eleven packs and three modes (present, no frontmatter,
 # named in the loading table, packs byte-identical to upstream fd58c62), that
 # agents/ holds only the agent, and that the read path is ${extensionPath}
@@ -122,6 +122,19 @@
 # ${extensionPath}, and no @{ or !{ injection. Each block is pinned whole by its
 # SHA-256 (its ```text fence body, CR stripped), and each changed line takes an
 # FSEC row; the two Step 4.5 rows are re-hashed for upstream's wording.
+#
+# W2484 -- W2286 (upstream e1a2415): the agent and skill descriptions are
+# loaded into every session. Upstream's checks are kept with upstream's labels
+# and needles: each frontmatter has the shape YAML reads and its keys, the
+# agent keeps the name Stride dispatches, each description is 150-400 bytes and
+# carries its triggers, read from the description itself. The agent's required
+# keys are name, description and tools (no model: this port inherits the
+# session model), a `  - <tool>` list under `tools:` is part of the shape, the
+# command pin is /security-review, and an absent pin refuses the Claude Code
+# command name. The W2284 pin on the old description's result-file sentence is
+# retired, and the core ceiling drops from 20480 to 18432. Every check has a
+# break-it, the bounds on both sides. lib/test-frontmatter.sh checks the agent
+# keys against Gemini CLI's strict schema.
 #
 # lib/check_agent_contract.ps1 is the PowerShell mirror: same labels, same
 # exit codes. Change both together.
@@ -244,7 +257,6 @@ pin_in RESULT_MODE "the path rules match upstream word for word"       '- **Acce
 pin_in RESULT_MODE "no path writes nothing"            'Return the single fenced ```json document exactly as the core prompt'"'"'s **Output schema** describes, and write nothing.'
 pin_in RESULT_MODE "the slash command never supplies the path"         'The `/security-review` slash command never supplies the variable and keeps parsing the inline fence.'
 pin_in RESULT_MODE "finding text is redacted in the file"              '[REDACTED — finding text embedded a credential]'
-pin "the description names the result file"            'or, when the caller supplies SECURITY_RESULT_PATH, written to that file with a short summary returned.'
 pin "the output schema defers to the result file"      'Return one fenced ```json document, unless an accepted `SECURITY_RESULT_PATH` takes it'
 pin_in RESULT_MODE "the closing paragraph names the file contract" 'The caller reads the file at the path it supplied; the summary is for a human, never a source.'
 pin "the carve-out is one file, written once"           'written once under `.stride/`'
@@ -554,18 +566,19 @@ pin_in CONS_MODE "an unwritten result file at a limit is a failed write" 'if you
 # Upstream's W2285 checks (scripts/check_agent_contract.sh :224-283 at
 # fd58c62), with upstream's labels and needles except where Gemini differs:
 # the read path is ${extensionPath}, not ${CLAUDE_PLUGIN_ROOT}; the core bound
-# is 10240-20480, not upstream's 10240-16384, because this port still carries
-# the long pre-W2286 frontmatter description and Gemini CLI's own tool
-# vocabulary, limits and complete_task paragraph (CHANGELOG.md, W2482); and
+# is 10240-18432, not upstream's 10240-16384, because this port carries
+# Gemini CLI's own tool vocabulary, limits and complete_task paragraph
+# (CHANGELOG.md, W2482; W2484 trimmed the description and lowered the ceiling
+# from 20480); and
 # Gemini CLI loads every top-level .md in agents/ as an agent, so agents/ must
 # hold the one agent file. The packs are upstream fd58c62's byte for byte, so
 # each is pinned whole by its SHA-256. ROOT (the optional ninth argument) is
 # the directory that holds agents/, packs/ and modes/.
 core_bytes="$(wc -c < "$AGENT" | tr -d ' ')"
-if [ "$core_bytes" -ge 10240 ] && [ "$core_bytes" -le 20480 ]; then
-  echo "ok: the core is $core_bytes bytes (10240-20480)"
+if [ "$core_bytes" -ge 10240 ] && [ "$core_bytes" -le 18432 ]; then
+  echo "ok: the core is $core_bytes bytes (10240-18432)"
 else
-  echo "FAIL: the core is $core_bytes bytes, outside 10240-20480"
+  echo "FAIL: the core is $core_bytes bytes, outside 10240-18432"
   fail=1
 fi
 PACKS="android django express ios phoenix rails react-nextjs web-defense supply-chain ci-cd agentic"
@@ -1323,6 +1336,128 @@ done
 if [ -z "$tag_bad" ]; then echo "ok: the agent, the command and the skill spell the tag identically"
 else echo "FAIL: the agent, the command and the skill spell the tag identically -- differs in:$tag_bad"; fail=1; fi
 
+# --- W2484: W2286, the two always-loaded descriptions (upstream e1a2415) ------
+# Upstream's W2286 checks (scripts/check_agent_contract.sh :306-390 at
+# fd58c62), with upstream's labels and needles except where Gemini differs.
+# The agent and skill descriptions are loaded into every session, so each is
+# bounded at 150-400 bytes; each frontmatter must still have the shape YAML
+# reads, with its keys; and each description keeps its triggers, pinned in the
+# description itself, so a later trim cannot drop one silently. Gemini
+# differences: the agent's required keys are name, description and tools, not
+# model (this port inherits the session model), and its `tools:` key holds a
+# YAML list, so a `  - <tool>` line under a key with no value is part of the
+# shape; the agent description names `/security-review`, not
+# `/stride-security-review:security-review`, and an absent pin refuses the
+# Claude Code command name coming back. The keys Gemini CLI's strict agent
+# schema accepts are checked by lib/test-frontmatter.sh.
+# These two awks read to the end of their input rather than exit early: under
+# pipefail an early exit can make the writer upstream die on SIGPIPE and turn
+# a good file into a failure, the hazard the here-strings above avoid.
+fm_text() { # $1=file -> the lines between the opening and closing --- fences, CR stripped
+  tr -d '\r' < "$1" | awk 'NR == 1 { o = ($0 == "---"); next } !o || c { next } /^---$/ { c = 1; next } { print } END { exit !(o && c) }'
+}
+description_of() { # $1=file -> the description text (a plain scalar or a | block)
+  fm_text "$1" | awk '
+    d { next }
+    /^description: *\|$/ { b = 1; next }
+    b && /^  / { sub(/^  /, ""); print; next }
+    b { d = 1; next }
+    /^description: / { sub(/^description: /, ""); print; d = 1 }'
+}
+check_frontmatter() { # $1=file $2=label $3=required keys, space-separated
+  local fm bad k
+  if ! fm="$(fm_text "$1")"; then
+    echo "FAIL: $2 frontmatter -- no closing --- fence"; fail=1; return
+  fi
+  # Each line is a top-level `key: value`, a `key: |` block, a line indented
+  # under that block, or a `  - item` line under a key with no value; a plain
+  # value must not hold ': ', ' #' or a leading YAML indicator, which would
+  # change or break how YAML reads it.
+  bad="$(printf '%s\n' "$fm" | awk '
+    /^[a-z_]+: *\|$/ { blk = 1; lst = 0; if (seen[$1]++) print "duplicate key " $1; next }
+    blk && /^  [^ ]/ { next }
+    lst && /^  - [^ ]/ { next }
+    /^[a-z_]+:( |$)/ { blk = 0; lst = 0; if (seen[$1]++) print "duplicate key " $1
+      v = $0; sub(/^[a-z_]+: */, "", v)
+      if (v == "") lst = 1
+      if (v ~ /: / || v ~ / #/ || v ~ /^[][{}>|*&!%@?:#-]/) print "plain value YAML would misread: " $1
+      next }
+    { print "not a key or block line: " substr($0, 1, 40) }')"
+  if [ -n "$bad" ]; then
+    echo "FAIL: $2 frontmatter -- $(printf '%s' "$bad" | tr '\n' ';')"; fail=1
+  else
+    echo "ok: $2 frontmatter has the shape YAML reads"
+  fi
+  for k in $3; do
+    if grep -q "^$k:" <<< "$fm"; then
+      echo "ok: $2 frontmatter has $k"
+    else
+      echo "FAIL: $2 frontmatter -- missing key $k"; fail=1
+    fi
+  done
+}
+check_description() { # $1=file $2=label
+  local n
+  n="$(description_of "$1" | tr -d '\n' | wc -c | tr -d ' ')"
+  if [ "$n" -ge 150 ] && [ "$n" -le 400 ]; then
+    echo "ok: the $2 description is $n bytes (150-400)"
+  else
+    echo "FAIL: the $2 description is $n bytes, outside 150-400"; fail=1
+  fi
+}
+# desc_pin and desc_absent name the file by its variable, so the self-tests can
+# break each pin in a copy.
+DPIN_FILES=(); DPIN_LABELS=(); DPIN_NEEDLES=()
+desc_pin() { # $1=AGENT|SKILL $2=label $3=fixed-string needle that must be in the description
+  DPIN_FILES+=("$1"); DPIN_LABELS+=("$2"); DPIN_NEEDLES+=("$3")
+  local d; d="$(description_of "${!1}")"
+  if grep -qF -- "$3" <<< "$d"; then
+    echo "ok: $2"
+  else
+    echo "FAIL: $2 -- missing from the description: $3"; fail=1
+  fi
+}
+desc_absent() { # $1=AGENT|SKILL $2=label $3=fixed-string needle that must not be in the description
+  local d; d="$(description_of "${!1}")"
+  if grep -qF -- "$3" <<< "$d"; then
+    echo "FAIL: $2 -- in the description: $3"; fail=1
+  else
+    echo "ok: $2"
+  fi
+}
+fm_line() { # $1=file $2=label $3=exact frontmatter line
+  local fm; fm="$(fm_text "$1")"
+  if grep -qxF -- "$3" <<< "$fm"; then
+    echo "ok: $2"
+  else
+    echo "FAIL: $2 -- no frontmatter line: $3"; fail=1
+  fi
+}
+check_frontmatter "$AGENT" "the agent" "name description tools"
+if [ "$SKILL_OK" = 1 ]; then
+  check_frontmatter "$SKILL" "the skill" "name description"
+fi
+fm_line "$AGENT" "the agent keeps the name Stride dispatches" 'name: security-reviewer'
+check_description "$AGENT" "agent"
+desc_pin AGENT "the agent description says when to use it" 'Use this agent to security-review'
+desc_pin AGENT "the agent description names its three inputs" "a diff, whole files, or a diff plus a task's security_considerations"
+desc_pin AGENT "the agent description says it gates a merge" 'before merge'
+desc_pin AGENT "the agent description names its command" '/security-review'
+desc_pin AGENT "the agent description names Stride" 'and Stride.'
+desc_absent AGENT "the agent description names no Claude Code command" '/stride-security-review:'
+if [ "$SKILL_OK" = 1 ]; then
+  fm_line "$SKILL" "the skill keeps its name" 'name: security-review-essentials'
+  check_description "$SKILL" "skill"
+  desc_pin SKILL "the skill description fires before a merge or PR" 'Use when about to merge or push a PR'
+  for surface in authentication authorization cryptography 'user input handling' 'secrets management' \
+    'database queries' shell-outs 'file uploads' redirects 'response rendering'; do
+    desc_pin SKILL "the skill description names $surface" "$surface"
+  done
+  desc_pin SKILL "the skill description fires on a reviewer's request" 'when a human reviewer asks for a security check'
+  desc_pin SKILL "the skill description names the command" '/security-review'
+  desc_pin SKILL "the skill description names the agent" 'security-reviewer agent'
+fi
+
 # --- Self-tests: a break-it per pin ------------------------------------------
 # Each case writes a variant of the agent to a temporary directory and runs this
 # script on it as a child. CHECK_AGENT_CONTRACT_CHILD stops the child running the
@@ -1939,9 +2074,18 @@ FAIL: the skill's --fail-on line is exactly the pinned one -- sha256" "$base" "$
   expect_root "W2285: a copy of the shipped extension passes every W2285 check" 0 "ok: agents/ holds the one agent file" "$TMP/w2285-root"
   # Row 1: the core bound. A pack pasted back into the core fails it.
   { cat "$base"; cat "$SCRIPT_DIR/../packs/phoenix.md"; } > "$TMP/w2285-big.md"
-  expect "W2285 break-it: a pack pasted back into the core fails the core bound" 1 "FAIL: the core is $(( $(wc -c < "$base") + $(wc -c < "$SCRIPT_DIR/../packs/phoenix.md") )) bytes, outside 10240-20480" "$TMP/w2285-big.md"
+  expect "W2285 break-it: a pack pasted back into the core fails the core bound" 1 "FAIL: the core is $(( $(wc -c < "$base") + $(wc -c < "$SCRIPT_DIR/../packs/phoenix.md") )) bytes, outside 10240-18432" "$TMP/w2285-big.md"
   head -c 10000 "$base" > "$TMP/w2285-small.md"
-  expect "W2285 break-it: a core under 10240 bytes fails the core bound" 1 "FAIL: the core is 10000 bytes, outside 10240-20480" "$TMP/w2285-small.md"
+  expect "W2285 break-it: a core under 10240 bytes fails the core bound" 1 "FAIL: the core is 10000 bytes, outside 10240-18432" "$TMP/w2285-small.md"
+  # W2484 lowered the ceiling to 18432: a core padded to exactly 18432 bytes
+  # passes it, one byte more fails it.
+  pad_core() { # $1=bytes $2=out -- the shipped core, then one line of x up to <bytes>
+    { cat "$base"; head -c $(( $1 - $(wc -c < "$base") - 1 )) /dev/zero | tr '\0' x; echo; } > "$2"
+  }
+  pad_core 18432 "$TMP/w2484-core-18432.md"
+  expect "W2484: a core of exactly 18432 bytes passes the core bound" 0 "ok: the core is 18432 bytes (10240-18432)" "$TMP/w2484-core-18432.md"
+  pad_core 18433 "$TMP/w2484-core-18433.md"
+  expect "W2484 break-it: a core of 18433 bytes fails the core bound" 1 "FAIL: the core is 18433 bytes, outside 10240-18432" "$TMP/w2484-core-18433.md"
   # Row 2: the pack list. A missing, extra, edited or frontmattered pack fails.
   new_root w2285-nopack; rm "$TMP/w2285-nopack/packs/phoenix.md"
   expect_root "W2285 break-it: a deleted pack fails the pack list" 1 "FAIL: packs/phoenix.md missing or empty" "$TMP/w2285-nopack"
@@ -2035,6 +2179,87 @@ FAIL: Step 4 names the agent's schema --" COMMAND "$TMP/w2483-ext.toml"
   replace_text 'Dispatch behavior depends on `FULL_MODE` from Step 1.' 'Dispatch behavior depends on `FULL_MODE` from Step 1 (see @{modes/considerations.md}).' "$cbase" "$TMP/w2483-at.toml"
   expect_each_m "W2483 break-it: an @{ file injection in the command fails" "FAIL: the command carries no @{ file injection --
 FAIL: the Step 4 schema sentence is exactly the pinned one -- found 0 lines" COMMAND "$TMP/w2483-at.toml"
+
+  # --- W2484 break-its (W2286) ---
+  # set_desc <key> <out> <text> -- the shipped copy of <key>'s file with its
+  # description replaced by <text>, kept in the file's own form: the agent's
+  # one `|` block line, the skill's plain scalar.
+  set_desc() {
+    local in; in="$(file_base "$1")"
+    if [ "$1" = AGENT ]; then
+      D="  $3" awk 'p { p = 0; print ENVIRON["D"]; next } /^description: \|$/ { p = 1 } { print }' "$in" > "$2"
+    else
+      D="description: $3" awk '!d && /^description: / { print ENVIRON["D"]; d = 1; next } { print }' "$in" > "$2"
+    fi
+  }
+  # pad_to <text> <bytes> <char> -- <text> followed by a space and <char>
+  # repeated up to exactly <bytes> bytes (<char> one byte).
+  pad_to() {
+    local t="$1 " ; while [ "${#t}" -lt "$2" ]; do t="$t$3"; done; printf '%s' "$t"
+  }
+  # rep <char> <bytes> -- <char> repeated to exactly <bytes> bytes.
+  rep() { local t=""; while [ "${#t}" -lt "$2" ]; do t="$t$1"; done; printf '%s' "$t"; }
+  AGENT_DESC="$(description_of "$base" | tr -d '\n')"
+  SKILL_DESC="$(description_of "$sbase" | tr -d '\n')"
+  expect "the shipped agent passes every W2286 check" 0 "ok: the agent description is ${#AGENT_DESC} bytes (150-400)" "$base"
+  expect "the agent with CRLF line endings passes the W2286 checks" 0 "ok: the agent frontmatter has the shape YAML reads" "$TMP/crlf.md"
+  # The bounds, both sides of each (LC_ALL=C, so ${#t} counts bytes).
+  set_desc AGENT "$TMP/w2286-agent-400.md" "$(pad_to "$AGENT_DESC" 400 x)"
+  expect "W2286: a 400-byte agent description passes the bound" 0 "ok: the agent description is 400 bytes (150-400)" "$TMP/w2286-agent-400.md"
+  set_desc AGENT "$TMP/w2286-agent-401.md" "$(pad_to "$AGENT_DESC" 401 x)"
+  expect_sole_fail_m "W2286 break-it: a 401-byte agent description fails" "FAIL: the agent description is 401 bytes, outside 150-400" AGENT "$TMP/w2286-agent-401.md"
+  set_desc AGENT "$TMP/w2286-agent-150.md" "$(rep a 150)"
+  expect_m "W2286: a 150-byte agent description passes the bound" 1 "ok: the agent description is 150 bytes (150-400)" AGENT "$TMP/w2286-agent-150.md"
+  set_desc AGENT "$TMP/w2286-agent-149.md" "$(rep a 149)"
+  expect_m "W2286 break-it: a 149-byte agent description fails" 1 "FAIL: the agent description is 149 bytes, outside 150-400" AGENT "$TMP/w2286-agent-149.md"
+  set_desc SKILL "$TMP/w2286-skill-400.md" "$(pad_to "$SKILL_DESC" 400 x)"
+  expect_m "W2286: a 400-byte skill description passes the bound" 0 "ok: the skill description is 400 bytes (150-400)" SKILL "$TMP/w2286-skill-400.md"
+  set_desc SKILL "$TMP/w2286-skill-401.md" "$(pad_to "$SKILL_DESC" 401 x)"
+  expect_sole_fail_m "W2286 break-it: a 401-byte skill description fails" "FAIL: the skill description is 401 bytes, outside 150-400" SKILL "$TMP/w2286-skill-401.md"
+  set_desc SKILL "$TMP/w2286-skill-150.md" "$(rep a 150)"
+  expect_m "W2286: a 150-byte skill description passes the bound" 1 "ok: the skill description is 150 bytes (150-400)" SKILL "$TMP/w2286-skill-150.md"
+  set_desc SKILL "$TMP/w2286-skill-149.md" "$(rep a 149)"
+  expect_m "W2286 break-it: a 149-byte skill description fails" 1 "FAIL: the skill description is 149 bytes, outside 150-400" SKILL "$TMP/w2286-skill-149.md"
+  # Multi-byte text is counted in bytes, not characters: 50 em dashes are 150
+  # bytes and pass; the shipped description plus em dashes past 400 bytes
+  # fails while it is still under 400 characters.
+  em="$(printf '\342\200\224')"; ems=""; for _ in $(seq 50); do ems="$ems$em"; done
+  set_desc AGENT "$TMP/w2286-em-150.md" "$ems"
+  expect_m "W2286: fifty em dashes (150 bytes, 50 characters) pass the bound" 1 "ok: the agent description is 150 bytes (150-400)" AGENT "$TMP/w2286-em-150.md"
+  t="$AGENT_DESC "; while [ $(( ${#t} + 3 )) -le 400 ]; do t="$t$em"; done; while [ "${#t}" -lt 401 ]; do t="${t}x"; done
+  set_desc AGENT "$TMP/w2286-em-401.md" "$t"
+  expect_sole_fail_m "W2286 break-it: a 401-byte agent description of fewer than 400 characters fails" "FAIL: the agent description is 401 bytes, outside 150-400" AGENT "$TMP/w2286-em-401.md"
+  # The frontmatter shape and keys.
+  awk '{ print } NR == 2 { print }' "$base" > "$TMP/w2286-dup.md"
+  expect "W2286 break-it: a duplicate key in the agent frontmatter fails" 1 "FAIL: the agent frontmatter -- duplicate key name:" "$TMP/w2286-dup.md"
+  replace_line 'temperature: ' 'temperature: 0.2 # warm' "$base" "$TMP/w2286-comment.md"
+  expect_sole_fail_m "W2286 break-it: a plain value holding ' #' fails the shape check" "FAIL: the agent frontmatter -- plain value YAML would misread: temperature:" AGENT "$TMP/w2286-comment.md"
+  replace_line 'name: security-review-essentials' 'name: security-review: essentials' "$sbase" "$TMP/w2286-skill-colon.md"
+  expect_m "W2286 break-it: a plain value holding ': ' in the skill fails the shape check" 1 "FAIL: the skill frontmatter -- plain value YAML would misread: name:" SKILL "$TMP/w2286-skill-colon.md"
+  awk 'NR == 2 { print; print "not yaml at all"; next } { print }' "$base" > "$TMP/w2286-stray.md"
+  expect_sole_fail_m "W2286 break-it: a stray line in the agent frontmatter fails the shape check" "FAIL: the agent frontmatter -- not a key or block line: not yaml at all" AGENT "$TMP/w2286-stray.md"
+  awk '/^description: \|$/ { print "description: >"; next } { print }' "$base" > "$TMP/w2286-folded.md"
+  expect_m "W2286 break-it: a folded description block fails the shape check" 1 "FAIL: the agent frontmatter -- " AGENT "$TMP/w2286-folded.md"
+  awk '/^tools:$/ { t = 1; next } t && /^  - / { next } { t = 0; print }' "$base" > "$TMP/w2286-no-tools.md"
+  expect_m "W2286 break-it: an agent frontmatter with no tools fails" 1 "FAIL: the agent frontmatter -- missing key tools" AGENT "$TMP/w2286-no-tools.md"
+  awk 'NR > 1 && $0 == "---" && !d { d = 1; next } { print }' "$base" > "$TMP/w2286-unclosed.md"
+  expect_m "W2286 break-it: an unclosed agent frontmatter fails" 1 "FAIL: the agent frontmatter -- no closing --- fence" AGENT "$TMP/w2286-unclosed.md"
+  awk '!/^name: /' "$sbase" > "$TMP/w2286-skill-noname.md"
+  expect_m "W2286 break-it: a skill frontmatter with no name fails" 1 "FAIL: the skill frontmatter -- missing key name" SKILL "$TMP/w2286-skill-noname.md"
+  replace_line 'name: security-reviewer' 'name: security-auditor' "$base" "$TMP/w2286-rename.md"
+  expect_sole_fail_m "W2286 break-it: renaming the agent fails the dispatch-name check" "FAIL: the agent keeps the name Stride dispatches -- no frontmatter line: name: security-reviewer" AGENT "$TMP/w2286-rename.md"
+  replace_line 'name: security-review-essentials' 'name: security-essentials' "$sbase" "$TMP/w2286-skill-rename.md"
+  expect_sole_fail_m "W2286 break-it: renaming the skill fails its name check" "FAIL: the skill keeps its name -- no frontmatter line: name: security-review-essentials" SKILL "$TMP/w2286-skill-rename.md"
+  # Each trigger pin: delete its needle from the description alone. A pin read
+  # from the whole file would still pass, because the body repeats most of them.
+  for i in "${!DPIN_LABELS[@]}"; do
+    k="${DPIN_FILES[$i]}"; v="$(description_of "$(file_base "$k")" | tr -d '\n')"
+    FROM="${DPIN_NEEDLES[$i]}" awk 'BEGIN { f = ENVIRON["FROM"] } { while ((j = index($0, f)) > 0) $0 = substr($0, 1, j - 1) substr($0, j + length(f)); print }' <<< "$v" > "$TMP/w2286-dv"
+    set_desc "$k" "$TMP/w2286-dpin-$i" "$(cat "$TMP/w2286-dv")"
+    expect_m "W2286 break-it: dropping '${DPIN_NEEDLES[$i]}' from the description fails '${DPIN_LABELS[$i]}'" 1 "FAIL: ${DPIN_LABELS[$i]} --" "$k" "$TMP/w2286-dpin-$i"
+  done
+  set_desc AGENT "$TMP/w2286-cc-name.md" "${AGENT_DESC//\/security-review/\/stride-security-review:security-review}"
+  expect_m "W2286 break-it: the Claude Code command name in the agent description fails" 1 "FAIL: the agent description names no Claude Code command --" AGENT "$TMP/w2286-cc-name.md"
 
   # One generic break-it per pin: drop every line carrying its needle.
   for i in "${!PIN_LABELS[@]}"; do
