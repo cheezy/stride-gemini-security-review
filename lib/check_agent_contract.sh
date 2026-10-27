@@ -79,8 +79,22 @@
 # name, an upstream scripts/ path and the pre-port N_GATE count coming back.
 # Each ported line is also pinned whole by its SHA-256: the agent's in the
 # SECTION table, the command's and the skill's in a new FSEC table, as W2488
-# did. Hand-written break-its restore "Stop.", remove each 6ca7233 guard in
-# place, and plant W2282's later budget sentence, which this port leaves out.
+# did. Hand-written break-its restore "Stop." and remove each 6ca7233 guard in
+# place.
+#
+# W2493 -- W2282 (upstream d56d71b): a considerations-mode budget of 20 tool
+# calls, at most 2 of them reproductions, and the one unbacked partial, whose
+# note begins `budget reached:`, that a reached budget yields. Upstream's
+# fourteen pins (scripts/check_agent_contract.sh :206 at fd58c62) are kept with
+# upstream's labels and needles: thirteen on the agent and one on the command.
+# The Gemini pins after them hold the budget's Gemini tool names and the limits
+# paragraph that reconciles the budget with Gemini CLI's max_turns and
+# timeout_mins; a README pin holds the limits there. A frontmatter check
+# requires both limits to be the values that paragraph states. Six ported agent
+# lines join the SHA-256 table, and the command and skill lines W2282 changed
+# take new FSEC hashes. Hand-written break-its raise the budget, change a limit
+# on one side only, and remove the command's and the skill's W2282 clauses in
+# place.
 #
 # lib/check_agent_contract.ps1 is the PowerShell mirror: same labels, same
 # exit codes. Change both together.
@@ -431,6 +445,37 @@ pin "an rci pass re-grades the verdicts"              'return `consideration_ver
 pin "an open verdict's evidence names its finding"    'Its `evidence` names that finding'"'"'s `file:line` (or a `file:start-end` range containing it)'
 pin "the command keeps and gates a linked finding"    'the `/security-review` command will not baseline-suppress a finding linked to an open verdict, and fails its `--fail-on` gate on a `partial` verdict it cannot link to one'
 
+# --- W2493: W2282, the considerations-mode tool budget (upstream d56d71b) -----
+# Upstream's thirteen agent pins, with upstream's labels and needles. Its one
+# command pin follows the W2492 file pins below.
+pin "considerations mode has a tool budget"  '**In `considerations` mode, a dispatch has a tool budget: at most 20 tool calls, of which at most 2 are reproductions.**'
+pin "the result-file write never counts"     'except the result-file write, which never counts and is never skipped'
+pin "each rci pass has its own budget"       'is its own dispatch with its own budget'
+pin "no budget in diff or full_file"         'The budget never applies in `diff` or `full_file` mode.'
+pin "the diff costs nothing"                 'The diff you were given costs nothing'
+pin "the read limit names the exception"     'except that in `considerations` mode only, the tool budget below allows a read past them'
+pin "a wider read is justified and counted"  'is allowed only when a verdict turns on it; it counts toward both the 10-file read limit and the budget'
+pin "a reproduction confirms a stated claim" 'A reproduction confirms one specific claim you state in a verdict'"'"'s `note` or a finding'"'"'s `description`'
+pin "budget reached is partial with a note"  'grade it `partial` with a `note` that begins `budget reached:`'
+pin "never mitigated, not even no-surface"   'never `mitigated`, not even the no-surface `mitigated`'
+pin "the budget partial is unbacked"         'Such a verdict is the one `partial` no finding backs'
+pin "the verdict rules name the exception"   '**The one unbacked `partial` — a budget reached.**'
+pin "an info backing would pass the gate"    'an `info` one would let the `--fail-on` gate pass an unverified consideration'
+
+# Gemini port pins: the budget's tool names and the limits paragraph.
+pin "every Gemini tool call counts against the budget" 'Every `read_file`, `grep_search`, `glob`, `run_shell_command` and `write_file` call counts, except the result-file write'
+pin "Gemini CLI's limits are hard outer bounds"   '**hard outer bounds the runtime enforces**, independent of the budget above'
+pin "max_turns counts model turns"               '`max_turns` counts model turns rather than tool calls'
+pin "calls sharing a turn each count"            'every call you make in one response shares that response'"'"'s turn, and each of them still counts against the budget'
+pin "the link check and write_file never count"  'the result-file write is two calls, the `run_shell_command` link check and then `write_file`, and neither counts against the budget'
+pin "the effective ceiling is the lower of the two" '**Your effective ceiling is always the lower of the two**'
+pin "the timeout can stop the agent first"       '`timeout_mins` is a wall-clock bound you cannot measure, and it can stop you before either'
+pin "no other call after the 21st turn"          'Make no call but the result-file write after your 21st turn'
+pin "the result file is written before the last working turn" 'write any result file before your last working turn'
+pin "the final turn takes only complete_task"    'at either limit the runtime grants one final turn that accepts only a `complete_task` call, so a write left for it never happens'
+pin "a limit reached leaves budget-reached partials" 'If the runtime tells you a limit has been reached, grade each consideration not yet settled `partial` with a `budget reached:` `note`'
+pin "an unwritten result file at a limit is a failed write" 'if you accepted a `SECURITY_RESULT_PATH` you have not yet written, treat it as a failed write'
+
 for i in "${!PIN_LABELS[@]}"; do
   if grep -qF -- "${PIN_NEEDLES[$i]}" "$AGENT"; then
     echo "ok: ${PIN_LABELS[$i]}"
@@ -469,6 +514,22 @@ else
   echo "FAIL: the frontmatter tool set -- got: $tool_set"
   fail=1
 fi
+
+# --- W2493: the frontmatter limits are the ones the agent text states --------
+# Exactly one `max_turns:` and one `timeout_mins:` line in the frontmatter, each
+# a whole number, and the agent text names each as `<key>: <value>` in
+# backticks, so a limit changed on one side only fails here. Here-strings, not
+# pipes: under pipefail an early-exiting grep -q can turn a match into a miss.
+agent_text="$(tr -d '\r' < "$AGENT")"; lim_bad=""
+for key in max_turns timeout_mins; do
+  v="$(K="$key: " awk 'NR == 1 && $0 == "---" { fm = 1; next }
+    NR == 1 || (fm && $0 == "---") { exit }
+    index($0, ENVIRON["K"]) == 1 { n++; v = substr($0, length(ENVIRON["K"]) + 1) }
+    END { if (n == 1 && v ~ /^[0-9]+$/) print v }' <<< "$agent_text")"
+  if [ -z "$v" ] || ! grep -qF -- "\`$key: $v\`" <<< "$agent_text"; then lim_bad="$lim_bad $key=${v:-?}"; fi
+done
+if [ -z "$lim_bad" ]; then echo "ok: the frontmatter limits are the ones the agent text states"
+else echo "FAIL: the frontmatter limits are the ones the agent text states -- differs:$lim_bad"; fail=1; fi
 
 # The macOS profile is pinned clause by clause, so an inserted `(allow ...)`
 # between two pinned clauses would pass every pin. The agent holds exactly one
@@ -521,6 +582,12 @@ SECTION_LABELS=(
   "the Gemini result-channel paragraph is exactly the pinned one"
   "the rci_pass paragraph is exactly the pinned one"
   "the backed-verdict paragraph is exactly the pinned one"
+  "the partial row is exactly the pinned one"
+  "the budget-partial paragraph is exactly the pinned one"
+  "the confidence paragraph is exactly the pinned one"
+  "the read-limit bullet is exactly the pinned one"
+  "the budget bullet is exactly the pinned one"
+  "the limits paragraph is exactly the pinned one"
 )
 SECTION_PREFIXES=(
   '- **Path accepted '
@@ -539,6 +606,12 @@ SECTION_PREFIXES=(
   'On Gemini CLI your final message'
   'When the caller'"'"'s prompt contains the directive'
   'A `partial` or `unmitigated` verdict MUST be backed'
+  '| `partial` | '
+  '**The one unbacked `partial`'
+  '`high` confidence means'
+  '- Review only the input the caller gave you.'
+  '- **In `considerations` mode, a dispatch has a tool budget'
+  '  Gemini CLI also bounds every dispatch'
 )
 SECTION_SHA256=(
   e3beba7d9fa94c6975f3dfb003ae0993008476d18945a613b12c00ad389ce8d0
@@ -557,6 +630,12 @@ SECTION_SHA256=(
   bb1c38ba89f21bbf306a2df88d25b4a6ee8c68361cb337439a4db337bf21fc99
   a952e7567e423932700337901956e6dd565fad3f47cc510daccbfe37a6e5a987
   5b9ba360c050b5e2f8ac020aae67713e9befc9b9a8dc474e81a1b16af211b8c6
+  a7569905842b969ec9799af1dfe2df7881130a5a9ada73ec69dc45f3e02d15d3
+  1b23ebc90d95bd536e2cc9886e9f56e1690e2e47ebe10456e80c4f96f7053fdc
+  8e638db4b1a103244c08995a091fe7f5946dbffcff9ba7f5bc23555668eb13f3
+  d27f3dbc746ecb0a51777b8fc9209dffa64a58f06bf8515ff98b3446c0bc7f89
+  160cbec45e06b08d5cbe20c801ed21fda7c8e2509d06f533f9b4703afcc664e4
+  aa48f6303fec906c4554249a1afb47bef8fa9ed96ba40647fd3d2df25ef24ba1
 )
 # The prefix travels through ENVIRON, never awk -v, which would process
 # backslash escapes in it.
@@ -736,7 +815,11 @@ pin_in COMMAND "malformed verdicts print one stderr line" '`consideration_verdic
 pin_in COMMAND "exit 1 covers the verdict gate" 'or (considerations mode) an `unmitigated` verdict, a `partial` verdict that no finding backs, or missing or malformed `consideration_verdicts`'
 pin_in SKILL   "the skill's --rci re-sends the directives" 'each pass re-sends the considerations, MAESTRO and patches directives, so their output fields survive it.'
 pin_in SKILL   "the skill's --baseline keeps backing findings" 'a finding that backs a partial or unmitigated consideration verdict is never suppressed.'
-pin_in SKILL   "the skill's --fail-on gates on verdicts" 'or with `--considerations` on any unmitigated verdict (and on a partial verdict no finding backs, or missing verdicts)'
+pin_in SKILL   "the skill's --fail-on gates on verdicts" 'or with `--considerations` on any unmitigated verdict (and on a partial verdict no finding backs — such as one the agent'"'"'s tool budget left unverified — or missing verdicts)'
+# W2493: W2282's command pin (upstream :206), with upstream's label and needle,
+# and the README's statement of the Gemini limits.
+pin_in COMMAND "the command gates a budget partial" 'a `partial` whose `note` begins `budget reached:`'
+pin_in README  "the README states the Gemini limits" '`max_turns: 24` or `timeout_mins: 16`'
 # The old forms W2279 replaced must not come back.
 absent_in COMMAND "Step 5's JSON branch does not stop before Step 6" 'is mode-independent. Stop.'
 absent_in COMMAND "Step 5's SARIF branch does not stop before Step 6" 'ingest natively. Stop.'
@@ -867,7 +950,7 @@ fsec COMMAND "the unmitigated bullet" \
   88d5f08e34d12183dd3fba44e7438c241af79abde09faf8961bf3fd708828469 'no severity threshold can waive that' 'a severity threshold can waive that'
 fsec COMMAND "the unbacked-partial bullet" \
   '- **A `partial` verdict that no finding backs**' \
-  8b1971c4483772c33716a5d7cb4cb0daf79e8ab7d9a414505e5b8fe948fc799b 'so it fails closed' 'so it fails open'
+  e6b63f500dbf1bfa25b86478c9f03ba411b5c248a6e5550bf4f31c6fcb25a6a1 'so it fails closed' 'so it fails open'
 fsec COMMAND "the malformed-verdicts bullet" \
   '- **Missing or malformed verdicts**' \
   57bb93f0e162aa3f049ddee343b6a7a6224fd764de886bb637e88661aecde606 'This counts as one.' 'This counts as none.'
@@ -897,7 +980,7 @@ fsec SKILL "the skill's --baseline line" \
   2d0461272b856bb4eb37b401f67f4507067c6245c93443e755991eb2b2fbcd71 'already-acknowledged findings' 'newly-raised findings'
 fsec SKILL "the skill's --fail-on line" \
   '- `--fail-on <severity>`' \
-  23f80a5d3a99f9697870e798142194711677f3c25beb46e655cc6e318377718a 'blocks merges' 'allows merges'
+  fcc61abdcf2a4ee7bf3470fe2d8c3a09ccff92873a8ffb8f40815de7877e34aa 'blocks merges' 'allows merges'
 for i in "${!FSEC_LABELS[@]}"; do
   key="${FSEC_FILES[$i]}"; ok_var="${key}_OK"; [ "${!ok_var}" = 1 ] || continue
   pfx="${FSEC_PREFIXES[$i]}"
@@ -1152,6 +1235,12 @@ if [ -z "${CHECK_AGENT_CONTRACT_CHILD:-}" ] && [ "$#" -eq 0 ]; then
     'is all the caller receives'
     'stay on the findings'
     'concrete vulnerability that remains'
+    'ran out before you could verify it'
+    'escalates it `critical`'
+    'within it `high` is reachable'
+    'and its `note` says why'
+    'never to explore'
+    'one fewer than'
   )
   SECTION_EDIT_TO=(
     'Check either with one'
@@ -1170,6 +1259,12 @@ if [ -z "${CHECK_AGENT_CONTRACT_CHILD:-}" ] && [ "$#" -eq 0 ]; then
     'is part of what the caller receives'
     'stay off the findings'
     'concrete vulnerability that was fixed'
+    'ran out after you could verify it'
+    'escalates it `high`'
+    'within it `low` is reachable'
+    'and its `note` hides why'
+    'also to explore'
+    'one more than'
   )
   for i in "${!SECTION_LABELS[@]}"; do
     from="${SECTION_EDIT_FROM[$i]}"; pfx="${SECTION_PREFIXES[$i]}"
@@ -1513,10 +1608,44 @@ FAIL: the skill's --fail-on line is exactly the pinned one -- sha256" "$base" "$
   expect_with "6ca7233 break-it: removing the position gate from Step 6 fails" 1 "FAIL: Step 6 gates an out-of-position verdict --" "$base" "$pbase" "$TMP/g6ca-step6.toml" "$rbase" "$sbase"
   replace_text ' Both modes take exactly one findings document, a single JSON object, and exit 2 on anything else — an empty file from a crashed dispatch, two documents run together, or a `findings` value that is not an array — so bad input is never read as a count of zero.' '' "$cbase" "$TMP/g6ca-onedoc.toml"
   expect_with "6ca7233 break-it: removing the one-document sentence fails" 1 "FAIL: the transform reads one document --" "$base" "$pbase" "$TMP/g6ca-onedoc.toml" "$rbase" "$sbase"
-  # Upstream W2282's later budget sentence is not part of this port: planting
-  # it in the unbacked-partial bullet fails only that line's hash.
-  replace_text 'so it fails closed.' 'so it fails closed. That includes a `partial` whose `note` begins `budget reached:`.' "$cbase" "$TMP/w2282-creep.toml"
-  expect_sole_fail_with "W2282 creep: the budget sentence in the unbacked-partial bullet fails only its hash" "FAIL: the unbacked-partial bullet is exactly the pinned one -- sha256" "$base" "$pbase" "$TMP/w2282-creep.toml" "$rbase" "$sbase"
+  # --- W2493 break-its (W2282) ---
+  # The budget raised, or its reproduction cap raised, fails upstream's pin.
+  replace_text 'at most 20 tool calls' 'at most 25 tool calls' "$base" "$TMP/w2282-25.md"
+  expect_each_with "W2282 break-it: changing 20 tool calls to 25 fails" "FAIL: considerations mode has a tool budget --
+FAIL: the budget bullet is exactly the pinned one -- sha256" "$TMP/w2282-25.md" "$pbase" "$cbase" "$rbase" "$sbase"
+  replace_text 'of which at most 2 are reproductions' 'of which at most 3 are reproductions' "$base" "$TMP/w2282-repro.md"
+  expect "W2282 break-it: raising the reproduction cap fails" 1 "FAIL: considerations mode has a tool budget --" "$TMP/w2282-repro.md"
+  # Upstream's Claude Code tool names coming back.
+  replace_text 'Every `read_file`, `grep_search`, `glob`, `run_shell_command` and `write_file` call counts' 'Every `Read`, `Grep`, `Glob` and `Bash` call counts' "$base" "$TMP/w2282-cc-tools.md"
+  expect_each_with "W2282 break-it: upstream's Claude Code tool names in the budget fail" "FAIL: every Gemini tool call counts against the budget --
+FAIL: no Claude Code Bash tool name --" "$TMP/w2282-cc-tools.md" "$pbase" "$cbase" "$rbase" "$sbase"
+  # Calls sharing one turn counted as one.
+  replace_text 'and each of them still counts against the budget' 'and together they count as one call' "$base" "$TMP/w2282-shared-turn.md"
+  expect_each_with "W2282 break-it: counting calls that share a turn as one fails" "FAIL: calls sharing a turn each count --
+FAIL: the limits paragraph is exactly the pinned one -- sha256" "$TMP/w2282-shared-turn.md" "$pbase" "$cbase" "$rbase" "$sbase"
+  replace_text 'write any result file before your last working turn' 'write any result file in your last turn' "$base" "$TMP/w2282-last-turn.md"
+  expect "W2282 break-it: leaving the result file for the last turn fails" 1 "FAIL: the result file is written before the last working turn --" "$TMP/w2282-last-turn.md"
+  replace_text 'never `mitigated`, not even the no-surface `mitigated`' '`mitigated` when there is no surface' "$base" "$TMP/w2282-mitigated.md"
+  expect "W2282 break-it: letting a reached budget grade mitigated fails" 1 "FAIL: never mitigated, not even no-surface --" "$TMP/w2282-mitigated.md"
+  # A limit changed on one side only: the frontmatter, then the text.
+  replace_line 'max_turns: ' 'max_turns: 10' "$base" "$TMP/w2282-fm-turns.md"
+  expect_sole_fail "W2282 break-it: max_turns changed in the frontmatter alone fails only the limits check" "FAIL: the frontmatter limits are the ones the agent text states -- differs: max_turns=10" "$TMP/w2282-fm-turns.md"
+  replace_line 'timeout_mins: ' 'timeout_mins: 5' "$base" "$TMP/w2282-fm-timeout.md"
+  expect_sole_fail "W2282 break-it: timeout_mins changed in the frontmatter alone fails only the limits check" "FAIL: the frontmatter limits are the ones the agent text states -- differs: timeout_mins=5" "$TMP/w2282-fm-timeout.md"
+  replace_text '`max_turns: 24`' '`max_turns: 10`' "$base" "$TMP/w2282-text-turns.md"
+  expect_each_with "W2282 break-it: max_turns changed in the text alone fails" "FAIL: the frontmatter limits are the ones the agent text states -- differs: max_turns=24
+FAIL: the limits paragraph is exactly the pinned one -- sha256" "$TMP/w2282-text-turns.md" "$pbase" "$cbase" "$rbase" "$sbase"
+  grep -v '^timeout_mins: ' "$base" > "$TMP/w2282-no-timeout.md"
+  expect "W2282 break-it: a frontmatter with no timeout_mins fails the limits check" 1 "FAIL: the frontmatter limits are the ones the agent text states -- differs: timeout_mins=?" "$TMP/w2282-no-timeout.md"
+  awk '{ print } index($0, "max_turns: ") == 1 { print }' "$base" > "$TMP/w2282-two-turns.md"
+  expect "W2282 break-it: two max_turns lines fail the limits check" 1 "FAIL: the frontmatter limits are the ones the agent text states -- differs: max_turns=?" "$TMP/w2282-two-turns.md"
+  # The command's and the skill's W2282 clauses, removed in place.
+  replace_text ' That includes a `partial` whose `note` begins `budget reached:` — the agent ran out of its considerations-mode tool budget before it could verify the consideration (see the agent'"'"'s **Operational constraints**) — which is unbacked by design, cites no `file:line`, and fails closed like any other.' '' "$cbase" "$TMP/w2282-cmd.toml"
+  expect_each_with "W2282 break-it: removing the budget sentence from the command's gate fails" "FAIL: the command gates a budget partial --
+FAIL: the unbacked-partial bullet is exactly the pinned one -- sha256" "$base" "$pbase" "$TMP/w2282-cmd.toml" "$rbase" "$sbase"
+  replace_text ' — such as one the agent'"'"'s tool budget left unverified —' ',' "$sbase" "$TMP/w2282-skill.md"
+  expect_each_with "W2282 break-it: removing the budget clause from the skill's --fail-on line fails" "FAIL: the skill's --fail-on gates on verdicts --
+FAIL: the skill's --fail-on line is exactly the pinned one -- sha256" "$base" "$pbase" "$cbase" "$rbase" "$TMP/w2282-skill.md"
 
   # One generic break-it per pin: drop every line carrying its needle.
   for i in "${!PIN_LABELS[@]}"; do

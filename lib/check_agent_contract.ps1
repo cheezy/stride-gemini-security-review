@@ -40,6 +40,14 @@
 # scripts/ path and the pre-port N_GATE count, two more agent line hashes, and
 # a SHA-256 pin over each ported line of the command and the skill.
 #
+# W2493 -- W2282 (upstream d56d71b): the same pins, labels and order as the
+# W2493 sections of check_agent_contract.sh -- upstream's thirteen agent pins
+# and one command pin on the considerations-mode tool budget, the Gemini pins
+# on its tool names and on the paragraph that reconciles it with max_turns and
+# timeout_mins, the README pin on those limits, the check that the frontmatter
+# limits are the values the agent text states, six more agent line hashes, and
+# new hashes for the command and skill lines W2282 changed.
+#
 # Offline. Reads the agent, the policy, the command, the README and the skill;
 # the self-tests write only to a temporary directory.
 # This file is kept ASCII-only so Windows PowerShell 5.1 reads it correctly.
@@ -386,7 +394,38 @@ $W2279Pins = @(
     ,@('the command keeps and gates a linked finding', 'the `/security-review` command will not baseline-suppress a finding linked to an open verdict, and fails its `--fail-on` gate on a `partial` verdict it cannot link to one')
 )
 
-$AllPins = $W2284Pins + $W2275Pins + $W2488Pins + $W2489Pins + $W2278Pins + $W2279Pins
+# --- W2493: W2282, the considerations-mode tool budget (upstream d56d71b) -----
+# Same pins, labels and order as the W2493 agent section of
+# check_agent_contract.sh: upstream's thirteen, then the Gemini pins.
+$W2282Pins = @(
+    ,@('considerations mode has a tool budget', '**In `considerations` mode, a dispatch has a tool budget: at most 20 tool calls, of which at most 2 are reproductions.**')
+    ,@('the result-file write never counts', 'except the result-file write, which never counts and is never skipped')
+    ,@('each rci pass has its own budget', 'is its own dispatch with its own budget')
+    ,@('no budget in diff or full_file', 'The budget never applies in `diff` or `full_file` mode.')
+    ,@('the diff costs nothing', 'The diff you were given costs nothing')
+    ,@('the read limit names the exception', 'except that in `considerations` mode only, the tool budget below allows a read past them')
+    ,@('a wider read is justified and counted', 'is allowed only when a verdict turns on it; it counts toward both the 10-file read limit and the budget')
+    ,@('a reproduction confirms a stated claim', 'A reproduction confirms one specific claim you state in a verdict''s `note` or a finding''s `description`')
+    ,@('budget reached is partial with a note', 'grade it `partial` with a `note` that begins `budget reached:`')
+    ,@('never mitigated, not even no-surface', 'never `mitigated`, not even the no-surface `mitigated`')
+    ,@('the budget partial is unbacked', 'Such a verdict is the one `partial` no finding backs')
+    ,@('the verdict rules name the exception', ('**The one unbacked `partial` ' + $EmDash + ' a budget reached.**'))
+    ,@('an info backing would pass the gate', 'an `info` one would let the `--fail-on` gate pass an unverified consideration')
+    ,@('every Gemini tool call counts against the budget', 'Every `read_file`, `grep_search`, `glob`, `run_shell_command` and `write_file` call counts, except the result-file write')
+    ,@('Gemini CLI''s limits are hard outer bounds', '**hard outer bounds the runtime enforces**, independent of the budget above')
+    ,@('max_turns counts model turns', '`max_turns` counts model turns rather than tool calls')
+    ,@('calls sharing a turn each count', 'every call you make in one response shares that response''s turn, and each of them still counts against the budget')
+    ,@('the link check and write_file never count', 'the result-file write is two calls, the `run_shell_command` link check and then `write_file`, and neither counts against the budget')
+    ,@('the effective ceiling is the lower of the two', '**Your effective ceiling is always the lower of the two**')
+    ,@('the timeout can stop the agent first', '`timeout_mins` is a wall-clock bound you cannot measure, and it can stop you before either')
+    ,@('no other call after the 21st turn', 'Make no call but the result-file write after your 21st turn')
+    ,@('the result file is written before the last working turn', 'write any result file before your last working turn')
+    ,@('the final turn takes only complete_task', 'at either limit the runtime grants one final turn that accepts only a `complete_task` call, so a write left for it never happens')
+    ,@('a limit reached leaves budget-reached partials', 'If the runtime tells you a limit has been reached, grade each consideration not yet settled `partial` with a `budget reached:` `note`')
+    ,@('an unwritten result file at a limit is a failed write', 'if you accepted a `SECURITY_RESULT_PATH` you have not yet written, treat it as a failed write')
+)
+
+$AllPins = $W2284Pins + $W2275Pins + $W2488Pins + $W2489Pins + $W2278Pins + $W2279Pins + $W2282Pins
 $AllAbsent = $W2284Absent + $W2488Absent + $W2489Absent + $W2278Absent
 
 # Test-W2284 <text> -- the ok:/FAIL: line for every W2284, W2275 and W2488 pin,
@@ -429,6 +468,31 @@ function Test-ToolSet([string]$text) {
     $got = $items -join ', '
     if ($got -eq 'read_file, grep_search, glob, run_shell_command, write_file') { return ,@('ok: the frontmatter tool set') }
     return ,@("FAIL: the frontmatter tool set -- got: $got")
+}
+
+# --- W2493: the frontmatter limits are the ones the agent text states --------
+# Test-Limits <text> -- as in the bash script: exactly one `max_turns:` and one
+# `timeout_mins:` line in the frontmatter, each a whole number, and the agent
+# text names each as `<key>: <value>` in backticks.
+function Test-Limits([string]$text) {
+    $t = $text -replace "`r", ''
+    $lines = $t -split "`n"
+    $bad = @()
+    foreach ($key in @('max_turns', 'timeout_mins')) {
+        $k = $key + ': '; $n = 0; $v = ''
+        if ($lines.Count -gt 0 -and $lines[0] -eq '---') {
+            for ($i = 1; $i -lt $lines.Count; $i++) {
+                if ($lines[$i] -eq '---') { break }
+                if ($lines[$i].StartsWith($k, [StringComparison]::Ordinal)) { $n++; $v = $lines[$i].Substring($k.Length) }
+            }
+        }
+        if ($n -ne 1 -or $v -notmatch '^[0-9]+$') { $v = '' }
+        if ($v -eq '' -or -not $t.Contains('`' + $key + ': ' + $v + '`')) {
+            if ($v -eq '') { $bad += "$key=?" } else { $bad += "$key=$v" }
+        }
+    }
+    if ($bad.Count -eq 0) { return ,@('ok: the frontmatter limits are the ones the agent text states') }
+    return ,@("FAIL: the frontmatter limits are the ones the agent text states -- differs: $($bad -join ' ')")
 }
 
 # Test-ProfileAllow <text> -- the macOS profile is pinned clause by clause, so an
@@ -489,6 +553,12 @@ $SectionPins = @(
     ,@('the Gemini result-channel paragraph is exactly the pinned one', 'On Gemini CLI your final message', 'bb1c38ba89f21bbf306a2df88d25b4a6ee8c68361cb337439a4db337bf21fc99')
     ,@('the rci_pass paragraph is exactly the pinned one', 'When the caller''s prompt contains the directive', 'a952e7567e423932700337901956e6dd565fad3f47cc510daccbfe37a6e5a987')
     ,@('the backed-verdict paragraph is exactly the pinned one', 'A `partial` or `unmitigated` verdict MUST be backed', '5b9ba360c050b5e2f8ac020aae67713e9befc9b9a8dc474e81a1b16af211b8c6')
+    ,@('the partial row is exactly the pinned one', '| `partial` | ', 'a7569905842b969ec9799af1dfe2df7881130a5a9ada73ec69dc45f3e02d15d3')
+    ,@('the budget-partial paragraph is exactly the pinned one', '**The one unbacked `partial`', '1b23ebc90d95bd536e2cc9886e9f56e1690e2e47ebe10456e80c4f96f7053fdc')
+    ,@('the confidence paragraph is exactly the pinned one', '`high` confidence means', '8e638db4b1a103244c08995a091fe7f5946dbffcff9ba7f5bc23555668eb13f3')
+    ,@('the read-limit bullet is exactly the pinned one', '- Review only the input the caller gave you.', 'd27f3dbc746ecb0a51777b8fc9209dffa64a58f06bf8515ff98b3446c0bc7f89')
+    ,@('the budget bullet is exactly the pinned one', '- **In `considerations` mode, a dispatch has a tool budget', '160cbec45e06b08d5cbe20c801ed21fda7c8e2509d06f533f9b4703afcc664e4')
+    ,@('the limits paragraph is exactly the pinned one', '  Gemini CLI also bounds every dispatch', 'aa48f6303fec906c4554249a1afb47bef8fa9ed96ba40647fd3d2df25ef24ba1')
 )
 function Test-Sections([string]$text) {
     $lines = ($text -replace "`r", '') -split "`n"
@@ -627,7 +697,12 @@ $FilePins += @(
     ,@('COMMAND', 'exit 1 covers the verdict gate', 'or (considerations mode) an `unmitigated` verdict, a `partial` verdict that no finding backs, or missing or malformed `consideration_verdicts`')
     ,@('SKILL', 'the skill''s --rci re-sends the directives', 'each pass re-sends the considerations, MAESTRO and patches directives, so their output fields survive it.')
     ,@('SKILL', 'the skill''s --baseline keeps backing findings', 'a finding that backs a partial or unmitigated consideration verdict is never suppressed.')
-    ,@('SKILL', 'the skill''s --fail-on gates on verdicts', 'or with `--considerations` on any unmitigated verdict (and on a partial verdict no finding backs, or missing verdicts)')
+    ,@('SKILL', 'the skill''s --fail-on gates on verdicts', ('or with `--considerations` on any unmitigated verdict (and on a partial verdict no finding backs ' + $EmDash + ' such as one the agent''s tool budget left unverified ' + $EmDash + ' or missing verdicts)'))
+)
+# W2493: W2282's command pin (upstream :206), then the README's Gemini limits.
+$FilePins += @(
+    ,@('COMMAND', 'the command gates a budget partial', 'a `partial` whose `note` begins `budget reached:`')
+    ,@('README', 'the README states the Gemini limits', '`max_turns: 24` or `timeout_mins: 16`')
 )
 $FileAbsent = @(
     ,@('README', 'the README lists no worktree diff-index form', '`git diff-index -p`')
@@ -670,7 +745,7 @@ $FileSectionPins = @(
     ,@('COMMAND', 'Step 6''s opening paragraph is exactly the pinned one', 'This step runs ONLY when `--fail-on <severity>`', '49838d3ff952a1aaaae7a47c0e3279cd006eec0864498f01234f153dd8b8eab1', 'observes the same exit code', 'observes a new exit code')
     ,@('COMMAND', 'the verdicts-gate heading is exactly the pinned one', '**Verdicts gate too (considerations mode).**', '9eb1f9ef4cfe0896a735e450a26102a7540926c331f86ca98b59cd21da734199', 'independent of the severity threshold', 'subject to the severity threshold')
     ,@('COMMAND', 'the unmitigated bullet is exactly the pinned one', '- **An `unmitigated` verdict trips the gate', '88d5f08e34d12183dd3fba44e7438c241af79abde09faf8961bf3fd708828469', 'no severity threshold can waive that', 'a severity threshold can waive that')
-    ,@('COMMAND', 'the unbacked-partial bullet is exactly the pinned one', '- **A `partial` verdict that no finding backs**', '8b1971c4483772c33716a5d7cb4cb0daf79e8ab7d9a414505e5b8fe948fc799b', 'so it fails closed', 'so it fails open')
+    ,@('COMMAND', 'the unbacked-partial bullet is exactly the pinned one', '- **A `partial` verdict that no finding backs**', 'e6b63f500dbf1bfa25b86478c9f03ba411b5c248a6e5550bf4f31c6fcb25a6a1', 'so it fails closed', 'so it fails open')
     ,@('COMMAND', 'the malformed-verdicts bullet is exactly the pinned one', '- **Missing or malformed verdicts**', '57bb93f0e162aa3f049ddee343b6a7a6224fd764de886bb637e88661aecde606', 'This counts as one.', 'This counts as none.')
     ,@('COMMAND', 'the no-considerations line is exactly the pinned one', 'When `CONSIDERATIONS_MODE=false` this rule', 'd32a8971a74fbab110c40f934475a25197146d53af8e6e837b78285b9bc0e328', 'the gate is the severity count alone', 'the gate is the verdict count alone')
     ,@('COMMAND', 'Procedure item 1 is exactly the pinned one', '1. Count findings at or above', '313a25aa61bc6d5cdf1a5d8952071f1743cf1ddf6a6a1e94925036268e8fce90', 'only zero versus non-zero matters', 'the exact count matters')
@@ -680,7 +755,7 @@ $FileSectionPins = @(
     ,@('COMMAND', 'the --rci example row is exactly the pinned one', '| `/security-review --considerations threat-model.md --rci', '87349c5a9dbe398817e9431bbdf06d4673507081368e6e4b6807d197125891ed', 'kept through the critique pass', 'dropped by the critique pass')
     ,@('SKILL', 'the skill''s --rci line is exactly the pinned one', '- `--rci [N]`', 'cc07ad78bc28697db822013268be317006a0ce71e27fd3bef77b334bd66c4b8d', 'critique-and-refine passes', 'critique-and-review passes')
     ,@('SKILL', 'the skill''s --baseline line is exactly the pinned one', '- `--baseline [path]`', '2d0461272b856bb4eb37b401f67f4507067c6245c93443e755991eb2b2fbcd71', 'already-acknowledged findings', 'newly-raised findings')
-    ,@('SKILL', 'the skill''s --fail-on line is exactly the pinned one', '- `--fail-on <severity>`', '23f80a5d3a99f9697870e798142194711677f3c25beb46e655cc6e318377718a', 'blocks merges', 'allows merges')
+    ,@('SKILL', 'the skill''s --fail-on line is exactly the pinned one', '- `--fail-on <severity>`', 'fcc61abdcf2a4ee7bf3470fe2d8c3a09ccff92873a8ffb8f40815de7877e34aa', 'blocks merges', 'allows merges')
 )
 function Test-Files([string]$commandPath, [string]$readmePath, [string]$skillPath) {
     $out = @()
@@ -758,7 +833,7 @@ function Test-Tag([string]$agentText, [string]$commandPath, [string]$skillPath) 
 }
 
 $agentText = [IO.File]::ReadAllText($AgentPath, [Text.Encoding]::UTF8)
-foreach ($line in ((Test-ToolSet $agentText) + (Test-ProfileAllow $agentText) + (Test-ProbeBlock $agentText) + (Test-Sections $agentText) + (Test-Policy $PolicyPath) + (Test-Files $CommandPath $ReadmePath $SkillPath) + (Test-Tag $agentText $CommandPath $SkillPath))) {
+foreach ($line in ((Test-ToolSet $agentText) + (Test-Limits $agentText) + (Test-ProfileAllow $agentText) + (Test-ProbeBlock $agentText) + (Test-Sections $agentText) + (Test-Policy $PolicyPath) + (Test-Files $CommandPath $ReadmePath $SkillPath) + (Test-Tag $agentText $CommandPath $SkillPath))) {
     Write-Output $line
     if ($line.StartsWith('FAIL: ')) { $script:fail = $true }
 }
@@ -1014,6 +1089,12 @@ if (-not $env:CHECK_AGENT_CONTRACT_CHILD -and -not $CustomPath) {
             ,@('is all the caller receives', 'is part of what the caller receives')
             ,@('stay on the findings', 'stay off the findings')
             ,@('concrete vulnerability that remains', 'concrete vulnerability that was fixed')
+            ,@('ran out before you could verify it', 'ran out after you could verify it')
+            ,@('escalates it `critical`', 'escalates it `high`')
+            ,@('within it `high` is reachable', 'within it `low` is reachable')
+            ,@('and its `note` says why', 'and its `note` hides why')
+            ,@('never to explore', 'also to explore')
+            ,@('one fewer than', 'one more than')
         )
         $baseLines = $baseText -split "`n"
         for ($i = 0; $i -lt $SectionPins.Count; $i++) {
@@ -1356,9 +1437,40 @@ if (-not $env:CHECK_AGENT_CONTRACT_CHILD -and -not $CustomPath) {
         Expect-FileFails '6ca7233 break-it: removing the position gate from Step 6 fails' @('FAIL: Step 6 gates an out-of-position verdict --') $p $rbase $sbase
         $p = Write-Variant 'g6ca-onedoc.toml' ($cText.Replace((' Both modes take exactly one findings document, a single JSON object, and exit 2 on anything else ' + $EmDash + ' an empty file from a crashed dispatch, two documents run together, or a `findings` value that is not an array ' + $EmDash + ' so bad input is never read as a count of zero.'), ''))
         Expect-FileFails '6ca7233 break-it: removing the one-document sentence fails' @('FAIL: the transform reads one document --') $p $rbase $sbase
-        # Upstream W2282's later budget sentence is not part of this port.
-        $p = Write-Variant 'w2282-creep.toml' ($cText.Replace('so it fails closed.', 'so it fails closed. That includes a `partial` whose `note` begins `budget reached:`.'))
-        Expect-FileSoleFail 'W2282 creep: the budget sentence in the unbacked-partial bullet fails only its hash' 'FAIL: the unbacked-partial bullet is exactly the pinned one -- sha256' $p $rbase $sbase
+        # --- W2493 break-its (W2282) ---
+        # The budget raised, or its reproduction cap raised, fails upstream's pin.
+        $p = Write-Variant 'w2282-25.md' ($baseText.Replace('at most 20 tool calls', 'at most 25 tool calls'))
+        Expect 'W2282 break-it: changing 20 tool calls to 25 fails' 1 'FAIL: considerations mode has a tool budget --' $p
+        Expect 'W2282 break-it: changing 20 tool calls to 25 fails the budget bullet hash' 1 'FAIL: the budget bullet is exactly the pinned one -- sha256' $p
+        Expect-InProcess 'W2282 break-it: raising the reproduction cap fails' ($baseText.Replace('of which at most 2 are reproductions', 'of which at most 3 are reproductions')) 'FAIL: considerations mode has a tool budget --'
+        # Upstream's Claude Code tool names coming back.
+        $cc = $baseText.Replace('Every `read_file`, `grep_search`, `glob`, `run_shell_command` and `write_file` call counts', 'Every `Read`, `Grep`, `Glob` and `Bash` call counts')
+        Expect-InProcess 'W2282 break-it: upstream''s Claude Code tool names in the budget fail' $cc 'FAIL: every Gemini tool call counts against the budget --'
+        Expect-InProcess 'W2282 break-it: upstream''s Claude Code tool names in the budget fail the Bash absent pin' $cc 'FAIL: no Claude Code Bash tool name --'
+        # Calls sharing one turn counted as one.
+        $p = Write-Variant 'w2282-shared-turn.md' ($baseText.Replace('and each of them still counts against the budget', 'and together they count as one call'))
+        Expect 'W2282 break-it: counting calls that share a turn as one fails' 1 'FAIL: calls sharing a turn each count --' $p
+        Expect 'W2282 break-it: counting calls that share a turn as one fails the limits paragraph hash' 1 'FAIL: the limits paragraph is exactly the pinned one -- sha256' $p
+        Expect-InProcess 'W2282 break-it: leaving the result file for the last turn fails' ($baseText.Replace('write any result file before your last working turn', 'write any result file in your last turn')) 'FAIL: the result file is written before the last working turn --'
+        Expect-InProcess 'W2282 break-it: letting a reached budget grade mitigated fails' ($baseText.Replace('never `mitigated`, not even the no-surface `mitigated`', '`mitigated` when there is no surface')) 'FAIL: never mitigated, not even no-surface --'
+        # A limit changed on one side only: the frontmatter, then the text.
+        $p = Write-Variant 'w2282-fm-turns.md' (Replace-Line $baseText 'max_turns: ' 'max_turns: 10')
+        Expect-SoleFail 'W2282 break-it: max_turns changed in the frontmatter alone fails only the limits check' 'FAIL: the frontmatter limits are the ones the agent text states -- differs: max_turns=10' $p
+        $p = Write-Variant 'w2282-fm-timeout.md' (Replace-Line $baseText 'timeout_mins: ' 'timeout_mins: 5')
+        Expect-SoleFail 'W2282 break-it: timeout_mins changed in the frontmatter alone fails only the limits check' 'FAIL: the frontmatter limits are the ones the agent text states -- differs: timeout_mins=5' $p
+        $p = Write-Variant 'w2282-text-turns.md' ($baseText.Replace('`max_turns: 24`', '`max_turns: 10`'))
+        Expect 'W2282 break-it: max_turns changed in the text alone fails' 1 'FAIL: the frontmatter limits are the ones the agent text states -- differs: max_turns=24' $p
+        Expect 'W2282 break-it: max_turns changed in the text alone fails the limits paragraph hash' 1 'FAIL: the limits paragraph is exactly the pinned one -- sha256' $p
+        $p = Write-Variant 'w2282-no-timeout.md' ((@($baseLines | Where-Object { -not $_.StartsWith('timeout_mins: ', [StringComparison]::Ordinal) })) -join "`n")
+        Expect 'W2282 break-it: a frontmatter with no timeout_mins fails the limits check' 1 'FAIL: the frontmatter limits are the ones the agent text states -- differs: timeout_mins=?' $p
+        $two = foreach ($l in $baseLines) { $l; if ($l.StartsWith('max_turns: ', [StringComparison]::Ordinal)) { $l } }
+        $p = Write-Variant 'w2282-two-turns.md' ($two -join "`n")
+        Expect 'W2282 break-it: two max_turns lines fail the limits check' 1 'FAIL: the frontmatter limits are the ones the agent text states -- differs: max_turns=?' $p
+        # The command's and the skill's W2282 clauses, removed in place.
+        $p = Write-Variant 'w2282-cmd.toml' ($cText.Replace((' That includes a `partial` whose `note` begins `budget reached:` ' + $EmDash + ' the agent ran out of its considerations-mode tool budget before it could verify the consideration (see the agent''s **Operational constraints**) ' + $EmDash + ' which is unbacked by design, cites no `file:line`, and fails closed like any other.'), ''))
+        Expect-FileFails 'W2282 break-it: removing the budget sentence from the command''s gate fails' @('FAIL: the command gates a budget partial --', 'FAIL: the unbacked-partial bullet is exactly the pinned one -- sha256') $p $rbase $sbase
+        $p = Write-Variant 'w2282-skill.md' ($sText.Replace((' ' + $EmDash + ' such as one the agent''s tool budget left unverified ' + $EmDash), ','))
+        Expect-FileFails 'W2282 break-it: removing the budget clause from the skill''s --fail-on line fails' @('FAIL: the skill''s --fail-on gates on verdicts --', 'FAIL: the skill''s --fail-on line is exactly the pinned one -- sha256') $cbase $rbase $p
 
         foreach ($pp in $AllPins) {
             Expect-InProcess "deleting the line for '$($pp[0])' fails it" (Remove-Lines $baseText $pp[1]) "FAIL: $($pp[0]) --"

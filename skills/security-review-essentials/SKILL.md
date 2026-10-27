@@ -106,7 +106,7 @@ The command's current flag surface, one line per flag — parsing and full seman
 - `--update-baseline` — rewrite the baseline file from the current findings (a distinct flag from `--baseline`).
 - `--patches` — emit a surgical-fix diff alongside each finding.
 - `--base <ref>` — diff against `<ref>...HEAD` instead of HEAD (PR workflows pass the target branch).
-- `--fail-on <severity>` — exit non-zero when findings reach the threshold, or with `--considerations` on any unmitigated verdict (and on a partial verdict no finding backs, or missing verdicts); this is the CI security gate that blocks merges.
+- `--fail-on <severity>` — exit non-zero when findings reach the threshold, or with `--considerations` on any unmitigated verdict (and on a partial verdict no finding backs — such as one the agent's tool budget left unverified — or missing verdicts); this is the CI security gate that blocks merges.
 - `--considerations <source>` — assess the diff against each declared security consideration (a file, one per line, or an inline string) and emit a `mitigated` / `partial` / `unmitigated` verdict per item alongside the findings (diff mode only).
 
 Two further customization knobs:
