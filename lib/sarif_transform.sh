@@ -48,10 +48,9 @@
 #   - Step 6    fail-on threshold: critical>high>medium>low>info; info never trips a threshold;
 #               an unmitigated verdict, an unbacked partial verdict and missing or malformed
 #               verdicts each trip the gate at every threshold (fail closed)
-#   Gemini port (W2491): the Step 4, Step 4.6 and Step 6 verdict, backing-finding and
-#   position rules above are not in commands/security-review.toml yet; they arrive with
-#   the command's verdict-gate port. Until then their spec is upstream's
-#   commands/security-review.md at fd58c62 (cheezy/stride-security-review 2.7.2).
+#   Gemini port: commands/security-review.toml carries the Step 4, Step 4.6 and Step 6
+#   verdict, backing-finding and position rules above since W2492 (upstream 72a9512
+#   and 6ca7233), and its prose stays authoritative.
 
 set -euo pipefail
 

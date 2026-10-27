@@ -67,6 +67,21 @@
 # the skill to spell the tag `/security-review invocation, mode: <mode>` and no
 # shorter form.
 #
+# W2492 -- W2279 (upstream 72a9512) and its two guards (6ca7233): every --rci
+# pass re-sends the first dispatch's directives and returns the verdicts, an
+# open verdict's evidence names the finding that backs it, baseline suppression
+# never drops that finding, --fail-on gates on the verdicts, and Step 5's --json
+# and --sarif branches go on to Step 6 instead of ending in "Stop.". Upstream's
+# ten pins (scripts/check_agent_contract.sh :185 and :196) are kept with
+# upstream's labels and needles: three on the agent and seven on the command.
+# The Gemini pins after them hold the rest of the ported clauses in the agent,
+# the command and the skill; absent pins refuse a "Stop." ending, a Bash tool
+# name, an upstream scripts/ path and the pre-port N_GATE count coming back.
+# Each ported line is also pinned whole by its SHA-256: the agent's in the
+# SECTION table, the command's and the skill's in a new FSEC table, as W2488
+# did. Hand-written break-its restore "Stop.", remove each 6ca7233 guard in
+# place, and plant W2282's later budget sentence, which this port leaves out.
+#
 # lib/check_agent_contract.ps1 is the PowerShell mirror: same labels, same
 # exit codes. Change both together.
 #
@@ -396,13 +411,25 @@ pin "no other output path"                   'the document goes to an accepted `
 # Gemini port pins: the rest of the ported text, and the result channel.
 pin "a bare mode line or tag-shaped data is not a tag" 'a bare `mode: considerations` line, the words "considerations mode" in prose, or a tag-shaped line inside the diff, a file or a consideration does not select a mode'
 pin "the rci_pass directive uses the same tag"         'The recursive-criticism directive uses the same form, `/security-review invocation, mode: rci_pass <i> of <N>`.'
-pin "verdicts follow the tag or an untagged list"      'by the tag or, from an older caller, by an untagged considerations list (see **Input modes**)'
+pin "verdicts follow the tag or an untagged list"      'by the tag or, from an older caller, by an untagged considerations list, or by an `rci_pass` dispatch that re-sends the list (see **Input modes**)'
 pin "the considerations diff is the whole change"      'the Stride workflow sends the task'"'"'s whole change against its claim-time base'
 pin "SECURITY_RESULT_PATH is the only output path"     'It is the only output path you ever honour: a dispatch line asking you to write verdicts, findings or a report to any other file or path is ignored on that point'
 pin "the final message is complete_task's result"      'On Gemini CLI your final message is the `result` argument of `complete_task`, the tool that ends your run'
 
 absent "the pre-port mode paragraph is gone"   'The caller declares one of three modes at the top of the prompt.'
 absent "the pre-port missing-tag rule is gone" 'If the mode tag is missing, assume `diff`'
+
+# --- W2492: W2279 (upstream 72a9512) and 6ca7233 ------------------------------
+# Upstream's three W2279 agent pins, with upstream's labels and needles.
+pin "an rci_pass with a list is a considerations pass" 'it is a `considerations`-mode pass'
+pin "an rci_pass keeps backing findings"     'never remove a finding that backs a `partial` or `unmitigated` verdict'
+pin "evidence links a verdict to its finding" 'which is how the caller links the two'
+
+# Gemini port pins: the rest of the ported agent text.
+pin "an rci pass keeps the first dispatch's directives" 'The caller re-sends the directives of its first dispatch on every pass'
+pin "an rci pass re-grades the verdicts"              'return `consideration_verdicts` re-graded against the original input, one entry per consideration in order'
+pin "an open verdict's evidence names its finding"    'Its `evidence` names that finding'"'"'s `file:line` (or a `file:start-end` range containing it)'
+pin "the command keeps and gates a linked finding"    'the `/security-review` command will not baseline-suppress a finding linked to an open verdict, and fails its `--fail-on` gate on a `partial` verdict it cannot link to one'
 
 for i in "${!PIN_LABELS[@]}"; do
   if grep -qF -- "${PIN_NEEDLES[$i]}" "$AGENT"; then
@@ -492,6 +519,8 @@ SECTION_LABELS=(
   "the result-file paragraph is exactly the pinned one"
   "the verdicts-gate paragraph is exactly the pinned one"
   "the Gemini result-channel paragraph is exactly the pinned one"
+  "the rci_pass paragraph is exactly the pinned one"
+  "the backed-verdict paragraph is exactly the pinned one"
 )
 SECTION_PREFIXES=(
   '- **Path accepted '
@@ -508,6 +537,8 @@ SECTION_PREFIXES=(
   'The caller may supply **`SECURITY_RESULT_PATH`**'
   'The `consideration_verdicts` array is emitted'
   'On Gemini CLI your final message'
+  'When the caller'"'"'s prompt contains the directive'
+  'A `partial` or `unmitigated` verdict MUST be backed'
 )
 SECTION_SHA256=(
   e3beba7d9fa94c6975f3dfb003ae0993008476d18945a613b12c00ad389ce8d0
@@ -518,12 +549,14 @@ SECTION_SHA256=(
   987d8286869a4d4eb81218bcaae27c9b50efbd3812d3d25ebc5cc4fb55d3b5ed
   bd09c6fd88f3a7128900a84e1df646f8f281d661d4d39390c621f77aff8a2347
   5ac8e332942362bfd2182790f870162243a1cf1064ec0f759ed54de2cf9b8859
-  924c659749f25ed0f2bad38b2d1e75d17e399e343a41bdd47c839447091d4a97
+  0f75bde42ccc2aefe76a9134ea871bce9a7ba998098b73c9c8e542032fe9ba21
   bbef86af241f37956f29f774f216fcb84b416366c61f4c80002a17723d1c57ff
   ed4bd7c53052ccc6e7ab58331f98146db52bb882a9ed11e432e1f0c642a95f5b
   7ff66423d4d9ce09da4246e926a4be5bd5ef0ce2b549c173412e721a93ebd3ad
-  6ffa5e109a5adcc47c2b82c9599efad9d64e87daee682bbacfe30087e001aa65
+  aaaec5d74e6f3ded7d2d5e4be9a6403855752e8502e373d6ddc55f462cf36c45
   bb1c38ba89f21bbf306a2df88d25b4a6ee8c68361cb337439a4db337bf21fc99
+  a952e7567e423932700337901956e6dd565fad3f47cc510daccbfe37a6e5a987
+  5b9ba360c050b5e2f8ac020aae67713e9befc9b9a8dc474e81a1b16af211b8c6
 )
 # The prefix travels through ENVIRON, never awk -v, which would process
 # backslash escapes in it.
@@ -667,6 +700,50 @@ pin_in COMMAND "the command's tag sentence matches upstream word for word" 'Send
 pin_in SKILL   "the skill names the tag and the result channel" 'opens its prompt with the agent'"'"'s one mode tag, `/security-review invocation, mode: <mode>`, and reads the result from the agent'"'"'s final message or the `SECURITY_RESULT_PATH` it supplied, never from any other file.'
 pin_in SKILL   "the skill names complete_task's result as the final message" 'On Gemini CLI the agent'"'"'s final message is the `result` argument it passes to `complete_task`'
 
+# W2492: W2279's command pins (upstream :185), with upstream's labels and needles.
+pin_in COMMAND "every rci pass re-sends the directives" 'The same directives Step 4 sent for this input, in the same order and verbatim, on every pass.'
+pin_in COMMAND "an unmitigated verdict trips the gate" 'An `unmitigated` verdict trips the gate at every threshold'
+pin_in COMMAND "baseline keeps backing findings" 'Baseline suppression never drops a finding that backs a verdict'
+# 6ca7233's guards (upstream :196): verdict i answers consideration i, at each
+# of its three sites, and the reference transform reads one document.
+pin_in COMMAND "Step 4 checks each verdict's position" 'one whose `consideration` is not the resolved consideration with the same index'
+pin_in COMMAND "Step 4.5 checks each verdict's position" 'answers a consideration out of position (an entry whose `consideration` is neither the resolved consideration at that index nor the redaction sentinel)'
+pin_in COMMAND "Step 6 gates an out-of-position verdict" 'neither the resolved consideration at that position nor the redaction sentinel'
+pin_in COMMAND "the transform reads one document" 'Both modes take exactly one findings document, a single JSON object, and exit 2 on anything else'
+# Gemini port pins: the rest of the ported command and skill text.
+pin_in COMMAND "the command defines a finding that backs a verdict" '**A finding that backs a verdict.** Steps 4.5, 4.6 and 6 all use this one definition'
+pin_in COMMAND "an open verdict is partial or unmitigated" 'An **open verdict** is a `consideration_verdicts` entry whose `status` is `partial` or `unmitigated`.'
+pin_in COMMAND "a finding backs a verdict by file and line" 'A finding **backs** an open verdict when its `file` equals a reference'"'"'s path and its `line` is inside that reference'"'"'s range.'
+pin_in COMMAND "an unlinkable verdict fails closed" 'treat **every** finding as backing a verdict'
+pin_in COMMAND "entry i answers consideration i" 'Entry *i* answers consideration *i*, so an array that repeats one verdict and leaves another consideration out is malformed even though its length is right.'
+pin_in COMMAND "the command names this port's transform" '`lib/sarif_transform.sh` implements this definition (`failon`, `suppress`) so `lib/run_transform_tests.sh` can lock it; this prose stays authoritative.'
+pin_in COMMAND "--rci re-sends the directives (Step 1)" 'Every pass re-sends the directives Step 4 sent'
+pin_in COMMAND "--baseline keeps backing findings (Step 1)" 'With `--considerations`, a finding that backs a `partial` or `unmitigated` verdict is never suppressed.'
+pin_in COMMAND "--fail-on gates on verdicts (Step 1)" 'With `--considerations`, an `unmitigated` verdict also fails the run at any threshold, as do a `partial` verdict no finding backs and missing or malformed verdicts.'
+pin_in COMMAND "an rci pass sends one tag" 'This is the only tag line in the prompt'
+pin_in COMMAND "an rci pass returns the verdicts" 'Return the consideration_verdicts array — one entry per consideration above, in order, re-graded against the original input. Never remove a finding that backs a partial or unmitigated verdict unless you re-grade that verdict to mitigated in this document.'
+pin_in COMMAND "an rci pass with bad verdicts exits 2" 'print `rci pass <i>: consideration_verdicts missing or malformed` and run a final `exit 2` via `run_shell_command`. Never carry the prior pass'"'"'s verdicts forward in its place.'
+pin_in COMMAND "Step 4.6 marks backing findings" '4. When `CONSIDERATIONS_MODE=true`, mark every finding that backs a verdict'
+pin_in COMMAND "Step 4.6 drops only unmarked findings" '**and that is not marked in step 4**'
+pin_in COMMAND "Step 5's JSON branch goes on to Step 6" 'Print nothing after it, and go to Step 6: the threshold gate still runs when `--fail-on` was passed'
+pin_in COMMAND "Step 5's SARIF branch goes on to Step 6" 'Print nothing after it, and go to Step 6, exactly as for `--json`.'
+pin_in COMMAND "Step 6 runs after every output form" 'it runs after every Step 5 output form — human-readable, `--json` and `--sarif` alike'
+pin_in COMMAND "verdicts gate too" '**Verdicts gate too (considerations mode).** When `CONSIDERATIONS_MODE=true`, the gate also reads the final `consideration_verdicts` and fails closed.'
+pin_in COMMAND "an unbacked partial trips the gate" '**A `partial` verdict that no finding backs**'
+pin_in COMMAND "missing or malformed verdicts trip the gate" '**Missing or malformed verdicts**'
+pin_in COMMAND "N_GATE counts tripping verdicts" 'plus, when `CONSIDERATIONS_MODE=true`, every verdict that trips the gate above'
+pin_in COMMAND "malformed verdicts print one stderr line" '`consideration_verdicts missing or malformed — gate fails closed`'
+pin_in COMMAND "exit 1 covers the verdict gate" 'or (considerations mode) an `unmitigated` verdict, a `partial` verdict that no finding backs, or missing or malformed `consideration_verdicts`'
+pin_in SKILL   "the skill's --rci re-sends the directives" 'each pass re-sends the considerations, MAESTRO and patches directives, so their output fields survive it.'
+pin_in SKILL   "the skill's --baseline keeps backing findings" 'a finding that backs a partial or unmitigated consideration verdict is never suppressed.'
+pin_in SKILL   "the skill's --fail-on gates on verdicts" 'or with `--considerations` on any unmitigated verdict (and on a partial verdict no finding backs, or missing verdicts)'
+# The old forms W2279 replaced must not come back.
+absent_in COMMAND "Step 5's JSON branch does not stop before Step 6" 'is mode-independent. Stop.'
+absent_in COMMAND "Step 5's SARIF branch does not stop before Step 6" 'ingest natively. Stop.'
+absent_in COMMAND "the command names no Bash tool" 'Bash'
+absent_in COMMAND "the command names no upstream scripts/ path" '`scripts/'
+absent_in COMMAND "the pre-port N_GATE count is gone" '1. Count findings at or above `FAIL_ON_SEVERITY`. Call this `N_GATE`.'
+
 # A file the pins read must exist; its pins are skipped when it does not.
 for key in README COMMAND SKILL; do
   f="${!key}"
@@ -715,6 +792,129 @@ if [ "$COMMAND_OK" = 1 ]; then
   if [ "$n_tq" = 2 ] && [ "$n_open" = 1 ] && [ "$n_close" = 1 ]; then echo "ok: the command prompt is one TOML literal string"
   else echo "FAIL: the command prompt is one TOML literal string -- $n_tq lines with ''', $n_open openers, $n_close closers"; fail=1; fi
 fi
+
+# --- W2492: each ported line of the command and the skill, whole ------------
+# As the agent's SECTION table does: exactly one line of the CR-stripped file
+# starts with the prefix, and that line plus LF hashes to the pinned value. The
+# last two fields are the one-word edit the self-tests make inside the line.
+FSEC_FILES=(); FSEC_LABELS=(); FSEC_PREFIXES=(); FSEC_SHA256=(); FSEC_FROM=(); FSEC_TO=()
+fsec() { FSEC_FILES+=("$1"); FSEC_LABELS+=("$2 is exactly the pinned one"); FSEC_PREFIXES+=("$3"); FSEC_SHA256+=("$4"); FSEC_FROM+=("$5"); FSEC_TO+=("$6"); }
+fsec COMMAND "the command's --rci bullet" \
+  '- If `--rci` appears' \
+  9502c93c050fd2da709a9c6344435f8911ae9c92078ba97110aa33a06cf4bbe4 'which bounds cost' 'which caps cost'
+fsec COMMAND "the command's --baseline bullet" \
+  '- If `--baseline` appears' \
+  61d4fb3cc3b6634af07e56efadab8feffe151a941776ff264dd28d3f643c07d6 'human note' 'human memo'
+fsec COMMAND "the command's --fail-on bullet" \
+  '- If `--fail-on` appears' \
+  6061421cd2c40d59b24adf765d52b0604438984cc9a9f9aa1dfb5058c3130476 'a stricter posture' 'a looser posture'
+fsec COMMAND "the backs-a-verdict heading" \
+  '**A finding that backs a verdict.**' \
+  19911b647db0dc863bc27ecb02edb3d6d88f747845697d0651298da3bc441259 'do not re-derive it per step' 'you may re-derive it per step'
+fsec COMMAND "the open-verdict bullet" \
+  '- An **open verdict** is' \
+  48f78d0761ef2626ef0c9a228c0a012bb4162d8d70c0cef0c3fcfaccd3087deb 'protects nothing' 'protects everything'
+fsec COMMAND "the evidence-references bullet" \
+  '- Its **evidence references** are' \
+  981cf478e3b8ce90e56950fb712a7f5a3aa904b01edc4cf03cc2e4eff8bf6034 'is the range' 'is the line'
+fsec COMMAND "the backs bullet" \
+  '- A finding **backs** an open verdict' \
+  bf42282ba7c8126133fd333fa9f2eba5fadc5b9a04671478a81bb6e5ed4639fd 'Several findings may back one verdict' 'One finding may back one verdict'
+fsec COMMAND "the fail-closed bullet" \
+  '- **Fail closed when the link cannot be drawn.**' \
+  51cf4a5e01df32c4521912e8c1ea602bc31cdf9ab0e7e99b8306bd92723a82ce 'its evidence names no reference' 'its evidence names a reference'
+fsec COMMAND "the transform sentence" \
+  '`lib/sarif_transform.sh` implements' \
+  9b17fd02846b4ec57e157d10dab2bb6ddfcac3ff96f39eb610125dd5a4752fdb 'from a crashed dispatch' 'from a finished dispatch'
+fsec COMMAND "the rci_pass tag bullet" \
+  '   - A one-line statement: `/security-review invocation, mode: rci_pass' \
+  dc81f94226752805b3a03d499fc0e3954f75c71745dd12ce82c1a7a047f3f387 'do not also send the Step 4 tag' 'also send the Step 4 tag'
+fsec COMMAND "the rci directives bullet" \
+  '   - The same directives Step 4 sent' \
+  bc0c29b40473602308ac1c43440b3960df11d662d70d7a55a2e61b15273a78b0 'Without them a pass would drop' 'Without them a pass might drop'
+fsec COMMAND "the rci directive paragraph" \
+  '   - A directive paragraph:' \
+  8120e43c717665acbbe095e6573cea497b4ab6ce6d9bd9c6b1529ad468cf1854 'summary shape and top-level fields' 'summary shape and nested fields'
+fsec COMMAND "the rci parse rule" \
+  '2. Parse the returned JSON. If parsing fails' \
+  d242437b165d34988700a9ded22ea3e9544c6fcd532a0392c2d5c46f9848bebe 'naming the pass' 'naming the batch'
+fsec COMMAND "Step 4.6 item 4" \
+  '4. When `CONSIDERATIONS_MODE=true`, mark every finding' \
+  e31a5e064ea7ac516e28bf67e9875ad010962b14c3d075c9c06f5d503be02a56 'in which every finding is marked' 'in which no finding is marked'
+fsec COMMAND "Step 4.6 item 5" \
+  '5. Drop every finding whose fingerprint' \
+  f0feb4bffad8b49f4eee0e25f7e5b3f32e36e523f82c4aed472243f35913f284 'integer counting only' 'integer counting all'
+fsec COMMAND "Step 4.6 item 6" \
+  '6. Recompute `summary.findings_by_severity` from the post-suppression' \
+  ac8346b3addb549ae33950223ae78c4396b57f9ac72ee050371ad0840a04a5ff 'so the severity counters match' 'so the severity counters trail'
+fsec COMMAND "Step 4.6 item 7" \
+  '7. If `UPDATE_BASELINE=true`' \
+  74ee2420330aaaab42a7bf9a539beb373b93978d0d6439bd80fb37cbc9158c53 'acknowledging it never hides it' 'acknowledging it hides it'
+fsec COMMAND "Step 5's JSON branch" \
+  '**If `JSON_MODE=true`:**' \
+  aadbd35c308d920b69e61c1dd6336632b12acf6ec778c4bfc52695c95de48f98 '(the CI shape)' '(the local shape)'
+fsec COMMAND "Step 5's SARIF branch" \
+  '**If `SARIF_MODE=true`:**' \
+  f207a8a5233e2e086f9f12d759156f7c2a916d6c23daccf654e1b02227893c91 'most IDE SARIF viewers' 'some IDE SARIF viewers'
+fsec COMMAND "Step 6's opening paragraph" \
+  'This step runs ONLY when `--fail-on <severity>`' \
+  49838d3ff952a1aaaae7a47c0e3279cd006eec0864498f01234f153dd8b8eab1 'observes the same exit code' 'observes a new exit code'
+fsec COMMAND "the verdicts-gate heading" \
+  '**Verdicts gate too (considerations mode).**' \
+  9eb1f9ef4cfe0896a735e450a26102a7540926c331f86ca98b59cd21da734199 'independent of the severity threshold' 'subject to the severity threshold'
+fsec COMMAND "the unmitigated bullet" \
+  '- **An `unmitigated` verdict trips the gate' \
+  88d5f08e34d12183dd3fba44e7438c241af79abde09faf8961bf3fd708828469 'no severity threshold can waive that' 'a severity threshold can waive that'
+fsec COMMAND "the unbacked-partial bullet" \
+  '- **A `partial` verdict that no finding backs**' \
+  8b1971c4483772c33716a5d7cb4cb0daf79e8ab7d9a414505e5b8fe948fc799b 'so it fails closed' 'so it fails open'
+fsec COMMAND "the malformed-verdicts bullet" \
+  '- **Missing or malformed verdicts**' \
+  57bb93f0e162aa3f049ddee343b6a7a6224fd764de886bb637e88661aecde606 'This counts as one.' 'This counts as none.'
+fsec COMMAND "the no-considerations line" \
+  'When `CONSIDERATIONS_MODE=false` this rule' \
+  d32a8971a74fbab110c40f934475a25197146d53af8e6e837b78285b9bc0e328 'the gate is the severity count alone' 'the gate is the verdict count alone'
+fsec COMMAND "Procedure item 1" \
+  '1. Count findings at or above' \
+  313a25aa61bc6d5cdf1a5d8952071f1743cf1ddf6a6a1e94925036268e8fce90 'only zero versus non-zero matters' 'the exact count matters'
+fsec COMMAND "the no-extra-line paragraph" \
+  'Do NOT print an additional' \
+  8838015c69653f3be15f884b292afe60f2edf9a219a46b6183483571d87c1897 'which nothing on stdout shows' 'which stdout already shows'
+fsec COMMAND "the exit 0 row" \
+  '| `0` | ' \
+  4bb17456953c961b3ce8c60bba2363fd12772de7d38021661c36f880fafa6048 'and well-formed verdicts' 'and malformed verdicts'
+fsec COMMAND "the exit 1 row" \
+  '| `1` | ' \
+  66851ec4e6777e9ff87f8f258c2d6b0b154a41e6abccdc228a2e56f823d5e3d9 'At least one finding' 'At least two findings'
+fsec COMMAND "the --rci example row" \
+  '| `/security-review --considerations threat-model.md --rci' \
+  87349c5a9dbe398817e9431bbdf06d4673507081368e6e4b6807d197125891ed 'kept through the critique pass' 'dropped by the critique pass'
+fsec SKILL "the skill's --rci line" \
+  '- `--rci [N]`' \
+  cc07ad78bc28697db822013268be317006a0ce71e27fd3bef77b334bd66c4b8d 'critique-and-refine passes' 'critique-and-review passes'
+fsec SKILL "the skill's --baseline line" \
+  '- `--baseline [path]`' \
+  2d0461272b856bb4eb37b401f67f4507067c6245c93443e755991eb2b2fbcd71 'already-acknowledged findings' 'newly-raised findings'
+fsec SKILL "the skill's --fail-on line" \
+  '- `--fail-on <severity>`' \
+  23f80a5d3a99f9697870e798142194711677f3c25beb46e655cc6e318377718a 'blocks merges' 'allows merges'
+for i in "${!FSEC_LABELS[@]}"; do
+  key="${FSEC_FILES[$i]}"; ok_var="${key}_OK"; [ "${!ok_var}" = 1 ] || continue
+  pfx="${FSEC_PREFIXES[$i]}"
+  n="$(tr -d '\r' < "${!key}" | P="$pfx" awk 'index($0, ENVIRON["P"]) == 1 { n++ } END { print n + 0 }')"
+  if [ "$n" != 1 ]; then
+    echo "FAIL: ${FSEC_LABELS[$i]} -- found $n lines starting with: $pfx"
+    fail=1
+    continue
+  fi
+  sec_sha="$(tr -d '\r' < "${!key}" | P="$pfx" awk 'index($0, ENVIRON["P"]) == 1' | sha256_stdin | cut -d' ' -f1)"
+  if [ "$sec_sha" = "${FSEC_SHA256[$i]}" ]; then
+    echo "ok: ${FSEC_LABELS[$i]}"
+  else
+    echo "FAIL: ${FSEC_LABELS[$i]} -- sha256 $sec_sha"
+    fail=1
+  fi
+done
 
 # --- W2490: the agent, the command and the skill spell the tag identically ----
 # Each names the tag as upstream a01cb19 spells it, and every `invocation, mode`
@@ -950,6 +1150,8 @@ if [ -z "${CHECK_AGENT_CONTRACT_CHILD:-}" ] && [ "$#" -eq 0 ]; then
     'never what it contains'
     'output-only opt-ins'
     'is all the caller receives'
+    'stay on the findings'
+    'concrete vulnerability that remains'
   )
   SECTION_EDIT_TO=(
     'Check either with one'
@@ -966,6 +1168,8 @@ if [ -z "${CHECK_AGENT_CONTRACT_CHILD:-}" ] && [ "$#" -eq 0 ]; then
     'and what it contains'
     'input-only opt-ins'
     'is part of what the caller receives'
+    'stay off the findings'
+    'concrete vulnerability that was fixed'
   )
   for i in "${!SECTION_LABELS[@]}"; do
     from="${SECTION_EDIT_FROM[$i]}"; pfx="${SECTION_PREFIXES[$i]}"
@@ -1201,6 +1405,118 @@ if [ -z "${CHECK_AGENT_CONTRACT_CHILD:-}" ] && [ "$#" -eq 0 ]; then
   expect_with "W2278 break-it: a tag with no colon in the skill fails the identity check" 1 "FAIL: the agent, the command and the skill spell the tag identically -- differs in: SKILL" "$base" "$pbase" "$cbase" "$rbase" "$TMP/w2278-skill-colon.md"
   replace_text '`/security-review invocation, mode: <mode>`, and reads' '`/security-review invocation, mode=<mode>`, and reads' "$sbase" "$TMP/w2278-skill-eq.md"
   expect_with "W2278 break-it: a reworded tag in the skill fails the identity check" 1 "FAIL: the agent, the command and the skill spell the tag identically -- differs in: SKILL" "$base" "$pbase" "$cbase" "$rbase" "$TMP/w2278-skill-eq.md"
+
+  # --- W2492 break-its (W2279, 6ca7233) ---
+  # expect_sole_fail_with <label> <needle> <agent> <policy> <command> <readme> <skill>
+  # -- exit 1, the needle, and exactly one "FAIL: " line.
+  expect_sole_fail_with() {
+    local label="$1" needle="$2" out rc nf; shift 2
+    out="$(CHECK_AGENT_CONTRACT_CHILD=1 bash "$SELF" "$@" 2>&1)"; rc=$?
+    nf="$(grep -c '^FAIL: ' <<< "$out")"
+    if [ "$rc" -ne 1 ]; then
+      echo "FAIL: self-test: $label -- exit $rc, wanted 1"; fail=1
+    elif ! grep -qF -- "$needle" <<< "$out"; then
+      echo "FAIL: self-test: $label -- output lacks: $needle"; fail=1
+    elif [ "$nf" -ne 1 ]; then
+      echo "FAIL: self-test: $label -- $nf FAIL lines, wanted 1: $(grep '^FAIL: ' <<< "$out" | tr '\n' '|')"; fail=1
+    else
+      echo "ok: self-test: $label"
+    fi
+  }
+  # expect_each_with <label> <needles, one per line> <agent> <policy> <command> <readme> <skill>
+  # -- exit 1 and every needle in the output.
+  expect_each_with() {
+    local label="$1" needles="$2" out rc nd missing=""; shift 2
+    out="$(CHECK_AGENT_CONTRACT_CHILD=1 bash "$SELF" "$@" 2>&1)"; rc=$?
+    while IFS= read -r nd; do
+      [ -n "$nd" ] || continue
+      grep -qF -- "$nd" <<< "$out" || missing="$missing [$nd]"
+    done <<< "$needles"
+    if [ "$rc" -ne 1 ]; then
+      echo "FAIL: self-test: $label -- exit $rc, wanted 1"; fail=1
+    elif [ -n "$missing" ]; then
+      echo "FAIL: self-test: $label -- output lacks:$missing"; fail=1
+    else
+      echo "ok: self-test: $label"
+    fi
+  }
+
+  # FSEC: per row, a one-word edit inside its line fails that hash and nothing
+  # else, and a missing line fails the exactly-one rule.
+  for i in "${!FSEC_LABELS[@]}"; do
+    key="${FSEC_FILES[$i]}"; src="$(file_base "$key")"; from="${FSEC_FROM[$i]}"; pfx="${FSEC_PREFIXES[$i]}"
+    n_file="$(grep -oF -- "$from" "$src" | wc -l | tr -d ' ')"
+    n_line="$(P="$pfx" awk 'index($0, ENVIRON["P"]) == 1' "$src" | grep -oF -- "$from" | wc -l | tr -d ' ')"
+    if [ "$n_file" = 1 ] && [ "$n_line" = 1 ]; then
+      echo "ok: self-test: the edit for '${FSEC_LABELS[$i]}' occurs once in its file, in its line"
+    else
+      echo "FAIL: self-test: the edit for '${FSEC_LABELS[$i]}' occurs once in its file, in its line -- $n_file in the file, $n_line in its line"; fail=1
+    fi
+    replace_text "$from" "${FSEC_TO[$i]}" "$src" "$TMP/fsec-edit-$i"
+    file_slots "$key" "$TMP/fsec-edit-$i"
+    expect_sole_fail_with "a one-word edit inside '${FSEC_LABELS[$i]}' fails only its hash" "FAIL: ${FSEC_LABELS[$i]} -- sha256" "$base" "$pbase" "$C" "$R" "$S"
+    P="$pfx" awk 'index($0, ENVIRON["P"]) != 1' "$src" > "$TMP/fsec-drop-$i"
+    file_slots "$key" "$TMP/fsec-drop-$i"
+    expect_with "a missing '${FSEC_LABELS[$i]}' line fails the exactly-one rule" 1 "FAIL: ${FSEC_LABELS[$i]} -- found 0 lines" "$base" "$pbase" "$C" "$R" "$S"
+  done
+  # Once per file: a duplicated line fails only the exactly-one rule.
+  for key in COMMAND SKILL; do
+    for i in "${!FSEC_LABELS[@]}"; do [ "${FSEC_FILES[$i]}" = "$key" ] && break; done
+    P="${FSEC_PREFIXES[$i]}" awk '{ print } index($0, ENVIRON["P"]) == 1 { print }' "$(file_base "$key")" > "$TMP/fsec-dup-$key"
+    file_slots "$key" "$TMP/fsec-dup-$key"
+    expect_sole_fail_with "a duplicated '${FSEC_LABELS[$i]}' line fails only the exactly-one rule" "FAIL: ${FSEC_LABELS[$i]} -- found 2 lines" "$base" "$pbase" "$C" "$R" "$S"
+  done
+  # CRLF line endings in the command and the skill pass every FSEC row.
+  awk '{ printf "%s\r\n", $0 }' "$cbase" > "$TMP/command-crlf.toml"
+  out="$(CHECK_AGENT_CONTRACT_CHILD=1 bash "$SELF" "$base" "$pbase" "$TMP/command-crlf.toml" "$rbase" "$TMP/skill-crlf.md" 2>&1)"; rc=$?
+  n_ok=0
+  for i in "${!FSEC_LABELS[@]}"; do grep -qxF -- "ok: ${FSEC_LABELS[$i]}" <<< "$out" && n_ok=$((n_ok + 1)); done
+  if [ "$rc" -eq 0 ] && [ "$n_ok" = "${#FSEC_LABELS[@]}" ]; then
+    echo "ok: self-test: a command and a skill with CRLF line endings pass every FSEC row"
+  else
+    echo "FAIL: self-test: a command and a skill with CRLF line endings pass every FSEC row -- exit $rc, $n_ok of ${#FSEC_LABELS[@]} rows"; fail=1
+  fi
+
+  # Restoring "Stop." at the end of Step 5's JSON branch, or its SARIF branch,
+  # fails the branch's pin, its absent pin and its line hash.
+  replace_text 'Print nothing after it, and go to Step 6: the threshold gate still runs when `--fail-on` was passed, so `--json --fail-on` (the CI shape) gates exactly as the human-readable report does.' 'Stop.' "$cbase" "$TMP/w2279-json-stop.toml"
+  expect_each_with "W2279 break-it: restoring Stop. at the end of Step 5's JSON branch fails" "FAIL: Step 5's JSON branch goes on to Step 6 --
+FAIL: Step 5's JSON branch does not stop before Step 6 --
+FAIL: Step 5's JSON branch is exactly the pinned one -- sha256" "$base" "$pbase" "$TMP/w2279-json-stop.toml" "$rbase" "$sbase"
+  replace_text 'Print nothing after it, and go to Step 6, exactly as for `--json`.' 'Stop.' "$cbase" "$TMP/w2279-sarif-stop.toml"
+  expect_each_with "W2279 break-it: restoring Stop. at the end of Step 5's SARIF branch fails" "FAIL: Step 5's SARIF branch goes on to Step 6 --
+FAIL: Step 5's SARIF branch does not stop before Step 6 --
+FAIL: Step 5's SARIF branch is exactly the pinned one -- sha256" "$base" "$pbase" "$TMP/w2279-sarif-stop.toml" "$rbase" "$sbase"
+  # The pre-port N_GATE count, restored.
+  replace_line '1. Count findings at or above' '1. Count findings at or above `FAIL_ON_SEVERITY`. Call this `N_GATE`.' "$cbase" "$TMP/w2279-ngate.toml"
+  expect_each_with "W2279 break-it: the pre-port N_GATE count fails" "FAIL: N_GATE counts tripping verdicts --
+FAIL: the pre-port N_GATE count is gone --" "$base" "$pbase" "$TMP/w2279-ngate.toml" "$rbase" "$sbase"
+  # A Bash tool name in the rci parse rule.
+  replace_text 'and run a final `exit 2` via `run_shell_command`. Never carry' 'and run a final `exit 2` via Bash. Never carry' "$cbase" "$TMP/w2279-bash.toml"
+  expect_each_with "W2279 break-it: a Bash tool name in the rci parse rule fails" "FAIL: the command names no Bash tool --
+FAIL: an rci pass with bad verdicts exits 2 --" "$base" "$pbase" "$TMP/w2279-bash.toml" "$rbase" "$sbase"
+  # The agent half, removed in place.
+  replace_text 'It is a critique of a prior document, not a fourth mode: when the caller'"'"'s own dispatch lines on an `rci_pass` also carry a security considerations list, it is a `considerations`-mode pass, and the considerations rules and `consideration_verdicts` apply. ' '' "$base" "$TMP/w2279-agent-rci.md"
+  expect "W2279 break-it: dropping the rci_pass-with-a-list sentence fails its pin" 1 "FAIL: an rci_pass with a list is a considerations pass --" "$TMP/w2279-agent-rci.md"
+  replace_text 'never remove a finding that backs a `partial`' 'remove any finding that backs a `partial`' "$base" "$TMP/w2279-agent-drop.md"
+  expect "W2279 break-it: letting an rci pass drop a backing finding fails its pin" 1 "FAIL: an rci_pass keeps backing findings --" "$TMP/w2279-agent-drop.md"
+  # The skill's pre-port --fail-on line, restored.
+  replace_line '- `--fail-on <severity>`' '- `--fail-on <severity>` — exit non-zero when findings reach the threshold; this is the CI security gate that blocks merges.' "$sbase" "$TMP/w2279-skill-failon.md"
+  expect_each_with "W2279 break-it: the skill's pre-port --fail-on line fails" "FAIL: the skill's --fail-on gates on verdicts --
+FAIL: the skill's --fail-on line is exactly the pinned one -- sha256" "$base" "$pbase" "$cbase" "$rbase" "$TMP/w2279-skill-failon.md"
+  # 6ca7233: each guard removed in place, leaving the rest of its line.
+  replace_text 'an entry out of position, one whose `consideration` is not the resolved consideration with the same index, verbatim, and not the redaction sentinel `[REDACTED — row text embedded a credential]` either; ' '' "$cbase" "$TMP/g6ca-step4.toml"
+  expect_with "6ca7233 break-it: removing the position rule from Step 4 fails" 1 "FAIL: Step 4 checks each verdict's position --" "$base" "$pbase" "$TMP/g6ca-step4.toml" "$rbase" "$sbase"
+  replace_text 'answers a consideration out of position (an entry whose `consideration` is neither the resolved consideration at that index nor the redaction sentinel), ' '' "$cbase" "$TMP/g6ca-step45.toml"
+  expect_with "6ca7233 break-it: removing the position check from Step 4.5 fails" 1 "FAIL: Step 4.5 checks each verdict's position --" "$base" "$pbase" "$TMP/g6ca-step45.toml" "$rbase" "$sbase"
+  replace_text 'carrying an entry whose `consideration` is neither the resolved consideration at that position nor the redaction sentinel (per **A finding that backs a verdict** in Step 4; so an array of the right length that drops an `unmitigated` verdict and repeats a `mitigated` one trips the gate), ' '' "$cbase" "$TMP/g6ca-step6.toml"
+  expect_with "6ca7233 break-it: removing the position gate from Step 6 fails" 1 "FAIL: Step 6 gates an out-of-position verdict --" "$base" "$pbase" "$TMP/g6ca-step6.toml" "$rbase" "$sbase"
+  replace_text ' Both modes take exactly one findings document, a single JSON object, and exit 2 on anything else — an empty file from a crashed dispatch, two documents run together, or a `findings` value that is not an array — so bad input is never read as a count of zero.' '' "$cbase" "$TMP/g6ca-onedoc.toml"
+  expect_with "6ca7233 break-it: removing the one-document sentence fails" 1 "FAIL: the transform reads one document --" "$base" "$pbase" "$TMP/g6ca-onedoc.toml" "$rbase" "$sbase"
+  # Upstream W2282's later budget sentence is not part of this port: planting
+  # it in the unbacked-partial bullet fails only that line's hash.
+  replace_text 'so it fails closed.' 'so it fails closed. That includes a `partial` whose `note` begins `budget reached:`.' "$cbase" "$TMP/w2282-creep.toml"
+  expect_sole_fail_with "W2282 creep: the budget sentence in the unbacked-partial bullet fails only its hash" "FAIL: the unbacked-partial bullet is exactly the pinned one -- sha256" "$base" "$pbase" "$TMP/w2282-creep.toml" "$rbase" "$sbase"
 
   # One generic break-it per pin: drop every line carrying its needle.
   for i in "${!PIN_LABELS[@]}"; do
