@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Top-level smoke-test runner for the stride-gemini-security-review extension.
 #
-# Runs the structure check, the frontmatter check, the agent contract check
+# Runs the structure check, the frontmatter check, the deterministic transform
+# golden tests (run_transform_tests.sh), the agent contract check
 # (check_agent_contract.sh) and the eval invocation check
 # (check_eval_invocation.sh) in sequence, then the offline policy pattern
 # check (check_policy_patterns.mjs) when node is on PATH (reported as
@@ -12,8 +13,7 @@
 # PATH, and exercises check_fixtures.sh's considerations guards on a scratch
 # copy of the tree; it needs no model, no credentials and no network.
 #
-# The deterministic transform golden tests (run_transform_tests.sh), the
-# fixture/EXPECTED.md parity guard (check_fixtures.sh), and the agent eval
+# The fixture/EXPECTED.md parity guard (check_fixtures.sh) and the agent eval
 # runner itself (run_eval.sh, which needs a real Gemini CLI and auth) are
 # separate entry points — see their headers.
 #
@@ -37,6 +37,13 @@ fi
 
 printf '\n=== frontmatter ===\n'
 if bash "${SCRIPT_DIR}/test-frontmatter.sh"; then
+  :
+else
+  FAILED=1
+fi
+
+printf '\n=== transforms (golden) ===\n'
+if bash "${SCRIPT_DIR}/run_transform_tests.sh"; then
   :
 else
   FAILED=1

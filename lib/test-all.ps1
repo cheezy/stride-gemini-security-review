@@ -1,15 +1,18 @@
 # Top-level smoke-test runner for the stride-gemini-security-review extension.
 # PowerShell mirror of test-all.sh.
 #
-# Runs the structure check, the frontmatter check and the agent contract check
-# (check_agent_contract.ps1) in sequence, then the eval invocation check
-# (check_eval_invocation.sh) through bash when bash and jq are on PATH, and
-# exits non-zero if any fails. Offline and read-only (the self-tests write only
-# to temporary directories) — suitable for gating a release.
+# Runs the structure check and the frontmatter check, then the deterministic
+# transform golden tests (run_transform_tests.sh) through bash, then the agent
+# contract check (check_agent_contract.ps1), then the eval invocation check
+# (check_eval_invocation.sh) through bash — each bash suite only when bash and
+# jq are on PATH — and exits non-zero if any fails. Offline and read-only (the
+# self-tests write only to temporary directories) — suitable for gating a
+# release.
 #
-# The eval invocation check has no PowerShell mirror: what it pins is how the
-# bash runner, lib/run_eval.sh, invokes gemini. Without bash or jq it is
-# reported as skipped, not passed. The offline policy pattern check
+# Neither bash suite has a PowerShell mirror: the transform tests lock
+# lib/sarif_transform.sh, itself a bash script, and the eval invocation check
+# pins how the bash runner, lib/run_eval.sh, invokes gemini. Without bash or jq
+# each is reported as skipped, not passed. The offline policy pattern check
 # (check_policy_patterns.mjs) runs through node when node is on PATH and is
 # likewise reported as skipped without it.
 #
@@ -46,14 +49,24 @@ Write-Host ''
 Write-Host '=== frontmatter ==='
 if (-not (Invoke-Check 'test-frontmatter.ps1')) { $failed = $true }
 
+$bash = Get-Command bash -ErrorAction SilentlyContinue
+$jq = Get-Command jq -ErrorAction SilentlyContinue
+
+Write-Host ''
+Write-Host '=== transforms (golden) ==='
+if ($bash -and $jq) {
+    & $bash.Source (Join-Path $ScriptDir 'run_transform_tests.sh') | Out-Host
+    if ($LASTEXITCODE -ne 0) { $failed = $true }
+} else {
+    Write-Host 'skipped: run_transform_tests.sh needs bash and jq on PATH'
+}
+
 Write-Host ''
 Write-Host '=== agent contract ==='
 if (-not (Invoke-Check 'check_agent_contract.ps1')) { $failed = $true }
 
 Write-Host ''
 Write-Host '=== eval invocation (fake CLI) ==='
-$bash = Get-Command bash -ErrorAction SilentlyContinue
-$jq = Get-Command jq -ErrorAction SilentlyContinue
 if ($bash -and $jq) {
     & $bash.Source (Join-Path $ScriptDir 'check_eval_invocation.sh') | Out-Host
     if ($LASTEXITCODE -ne 0) { $failed = $true }
