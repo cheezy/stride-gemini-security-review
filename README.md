@@ -126,7 +126,8 @@ Framework packs map to the existing universal `vulnerability_class` values — t
 - `run_transform_tests.sh` — golden-file + spec-assertion tests (TAP 13) that lock those transforms byte-for-byte.
 - `check_fixtures.sh` — parity guard between `fixtures/` and `fixtures/EXPECTED.md`.
 - `run_eval.sh` — the agent eval runner: dispatches the `security-reviewer` agent over each fixture (via the Gemini CLI) and asserts the expectations in `EXPECTED.md`, including the considerations-mode positive/negative controls. `--dry-run` exercises the parser/comparator without an API call.
-- `test-structure.sh` / `test-frontmatter.sh` / `test-all.sh` (+ PowerShell mirrors) — offline structure and frontmatter self-validation.
+- `check_agent_contract.sh` (+ PowerShell mirror) — contract pins on `agents/security-reviewer.md`, each with a self-testing break-it. Its first pin refuses any `${word}` token in the agent, because Gemini CLI templates the agent body and refuses to load an agent whose placeholder it cannot fill.
+- `test-structure.sh` / `test-frontmatter.sh` / `test-all.sh` (+ PowerShell mirrors) — offline structure and frontmatter self-validation; `test-all` also runs the agent contract check.
 
 `fixtures/` holds the framework rule-pack fixtures with paired positive- and negative-controls (including considerations-mode controls) and the golden files under `fixtures/golden/`.
 

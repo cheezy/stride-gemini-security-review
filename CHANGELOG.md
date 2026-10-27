@@ -5,6 +5,16 @@ All notable changes to the Stride Security Review extension for Gemini CLI are d
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Gemini CLI no longer refuses to load the `security-reviewer` agent with a template validation error (W2480).** Gemini CLI runs `templateString()` over a subagent's body and throws on any `${word}` placeholder that is not one of its inputs (`query`, `cliVersion`, `activeModel`, `today`), using the regex `/\$\{(\w+)\}/g` (`@google/gemini-cli-core` 0.65.0, `dist/src/agents/utils.js`). The React/Next.js `href` scheme-bypass row in `agents/security-reviewer.md` carried two JavaScript template-literal examples containing `${url}` and `${id}`, so every dispatch of the v0.1.1 agent failed with `Template validation failed: Missing required input parameters: url, id`. The row now describes the same two template literals in words (one interpolating `url` into `/redirect?to=`, one interpolating `id` into `/users/`) with no placeholder token; its rule, sink and do-not-flag cases are unchanged. Upstream never hit this because its row lives in `packs/react-nextjs.md`, which is read at runtime and not templated; moving the row into a pack is the W2285 port.
+
+### Added
+
+- **`lib/check_agent_contract.sh` and its PowerShell mirror `lib/check_agent_contract.ps1`**, run by `lib/test-all.sh` and `lib/test-all.ps1`. Modelled on upstream's `scripts/check_agent_contract.sh`: one section per port task, each pin printing `ok:` or `FAIL:`. Its first pin refuses any `${word}` token in the agent file, frontmatter included, using the CLI's own placeholder pattern. Unlike upstream, each pin carries a self-testing break-it that plants the broken shape in a temporary copy of the agent and checks the script fails on it; the self-tests also cover bare `$`, `$$` and `${` forms that must not trip the pin, CRLF line endings, and a missing, empty or unreadable agent file.
+
 ## [0.1.1] - 2026-07-23
 
 ### Fixed

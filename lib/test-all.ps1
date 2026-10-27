@@ -1,15 +1,16 @@
 # Top-level smoke-test runner for the stride-gemini-security-review extension.
 # PowerShell mirror of test-all.sh.
 #
-# Runs the structure check and the frontmatter check in sequence and exits
-# non-zero if either fails. Offline and read-only — suitable for gating a
-# release.
+# Runs the structure check, the frontmatter check and the agent contract check
+# (check_agent_contract.ps1) in sequence and exits non-zero if any fails.
+# Offline and read-only (the contract check's self-tests write only to a
+# temporary directory) — suitable for gating a release.
 #
 # Usage:
 #   pwsh -NoProfile -File lib\test-all.ps1
 #   (or from Windows PowerShell 5.1:  powershell -File lib\test-all.ps1)
 #
-# Exit code: 0 only if BOTH checks pass; 1 if either fails.
+# Exit code: 0 only if ALL checks pass; 1 if any fails.
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -37,6 +38,10 @@ if (-not (Invoke-Check 'test-structure.ps1')) { $failed = $true }
 Write-Host ''
 Write-Host '=== frontmatter ==='
 if (-not (Invoke-Check 'test-frontmatter.ps1')) { $failed = $true }
+
+Write-Host ''
+Write-Host '=== agent contract ==='
+if (-not (Invoke-Check 'check_agent_contract.ps1')) { $failed = $true }
 
 Write-Host ''
 Write-Host '=== result ==='
