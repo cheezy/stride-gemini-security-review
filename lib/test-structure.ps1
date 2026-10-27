@@ -198,6 +198,64 @@ foreach ($doc in @('GEMINI.md', 'README.md', 'CHANGELOG.md', 'LICENSE')) {
     Test-Exists $doc $doc
 }
 
+# --- GEMINI.md carries no Claude Code mechanism ------------------------------
+#
+# Mirror of the test-structure.sh check. GEMINI.md is the extension's context
+# file, loaded into every Gemini CLI session, so a Claude Code mechanism copied
+# from upstream would be model context pointing at something Gemini does not
+# have. Needles are matched as fixed strings, case-sensitively (ordinal
+# String.Contains). "Claude Code" itself is not a needle: GEMINI.md names the
+# upstream it was ported from. README.md is not checked: it legitimately names
+# CLAUDE_PLUGIN_ROOT when describing what is not ported.
+#
+# The self-test plants each needle in a temporary copy (outside the extension
+# tree, removed afterwards) and requires the check to flag it.
+
+$ClaudeMechanisms = @(
+    'CLAUDE_PLUGIN_ROOT',
+    'claude -p',
+    '--plugin-dir',
+    '.claude-plugin',
+    'the Agent tool',
+    '`Bash`',
+    '`Read`',
+    '`Grep`',
+    '`Glob`',
+    '`Write`',
+    '`Edit`'
+)
+
+function Get-ClaudeMechanismHits([string]$path) {
+    $text = [System.IO.File]::ReadAllText($path)
+    $found = @()
+    foreach ($needle in $ClaudeMechanisms) {
+        if ($text.Contains($needle)) { $found += $needle }
+    }
+    return ,$found
+}
+
+Write-Host ''
+Write-Host 'GEMINI.md carries no Claude Code mechanism'
+$mechHits = Get-ClaudeMechanismHits (Join-Path $PluginRoot 'GEMINI.md')
+if ($mechHits.Count -eq 0) { Pass "GEMINI.md names none of the $($ClaudeMechanisms.Count) Claude Code mechanisms" }
+else { Fail 'GEMINI.md names a Claude Code mechanism' ($mechHits -join ' ') }
+
+$mechTmp = Join-Path ([System.IO.Path]::GetTempPath()) ('sgsr-mech.' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $mechTmp | Out-Null
+$mechMissed = @()
+try {
+    $geminiText = [System.IO.File]::ReadAllText((Join-Path $PluginRoot 'GEMINI.md'))
+    $planted = Join-Path $mechTmp 'GEMINI.md'
+    foreach ($needle in $ClaudeMechanisms) {
+        [System.IO.File]::WriteAllText($planted, $geminiText + "`nplanted: " + $needle + "`n")
+        if (-not ((Get-ClaudeMechanismHits $planted) -ccontains $needle)) { $mechMissed += $needle }
+    }
+} finally {
+    Remove-Item -Recurse -Force $mechTmp
+}
+if ($mechMissed.Count -eq 0) { Pass "the mechanism check flags each of the $($ClaudeMechanisms.Count) needles when planted" }
+else { Fail 'the mechanism check misses a planted needle' ($mechMissed -join ' ') }
+
 # --- Summary ----------------------------------------------------------------
 
 Write-Host ''

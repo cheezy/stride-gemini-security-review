@@ -191,6 +191,67 @@ for doc in GEMINI.md README.md CHANGELOG.md LICENSE; do
   exists "$doc" "$doc"
 done
 
+# --- GEMINI.md carries no Claude Code mechanism ------------------------------
+#
+# GEMINI.md is the extension's context file: Gemini CLI loads it into every
+# session, so a Claude Code mechanism copied from upstream would be model
+# context pointing at something Gemini does not have. The needles are matched
+# as fixed strings, case-sensitively. "Claude Code" itself is not a needle:
+# GEMINI.md names the upstream it was ported from. README.md is not checked:
+# it legitimately names CLAUDE_PLUGIN_ROOT when describing what is not ported.
+#
+# The self-test plants each needle in a temporary copy (outside the extension
+# tree, removed afterwards) and requires the check to flag it, so a needle
+# that could never match is caught too.
+
+CLAUDE_MECHANISMS=(
+  'CLAUDE_PLUGIN_ROOT'
+  'claude -p'
+  '--plugin-dir'
+  '.claude-plugin'
+  'the Agent tool'
+  '`Bash`'
+  '`Read`'
+  '`Grep`'
+  '`Glob`'
+  '`Write`'
+  '`Edit`'
+)
+
+# claude_mechanism_hits <file> — prints each needle found in <file>, one per line
+claude_mechanism_hits() {
+  local needle
+  for needle in "${CLAUDE_MECHANISMS[@]}"; do
+    if grep -qF -- "$needle" "$1"; then
+      printf '%s\n' "$needle"
+    fi
+  done
+}
+
+printf '\nGEMINI.md carries no Claude Code mechanism\n'
+hits="$(claude_mechanism_hits "${PLUGIN_ROOT}/GEMINI.md")"
+if [ -z "$hits" ]; then
+  ok "GEMINI.md names none of the ${#CLAUDE_MECHANISMS[@]} Claude Code mechanisms"
+else
+  nope "GEMINI.md names a Claude Code mechanism" "$(printf '%s' "$hits" | tr '\n' ' ')"
+fi
+
+mech_tmp="$(mktemp -d "${TMPDIR:-/tmp}/sgsr-mech.XXXXXX")"
+missed=""
+for needle in "${CLAUDE_MECHANISMS[@]}"; do
+  cp "${PLUGIN_ROOT}/GEMINI.md" "${mech_tmp}/GEMINI.md"
+  printf '\nplanted: %s\n' "$needle" >> "${mech_tmp}/GEMINI.md"
+  if ! claude_mechanism_hits "${mech_tmp}/GEMINI.md" | grep -qxF -- "$needle"; then
+    missed="${missed}${needle} "
+  fi
+done
+rm -rf "$mech_tmp"
+if [ -z "$missed" ]; then
+  ok "the mechanism check flags each of the ${#CLAUDE_MECHANISMS[@]} needles when planted"
+else
+  nope "the mechanism check misses a planted needle" "$missed"
+fi
+
 # --- Summary ----------------------------------------------------------------
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
