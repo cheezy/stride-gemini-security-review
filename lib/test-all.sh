@@ -4,7 +4,8 @@
 # Runs the structure check, the frontmatter check, the deterministic transform
 # golden tests (run_transform_tests.sh), the agent contract check
 # (check_agent_contract.sh) and the eval invocation check
-# (check_eval_invocation.sh) in sequence, then the offline policy pattern
+# (check_eval_invocation.sh) and the install check (check_install.sh, which
+# runs install.sh into a scratch HOME) in sequence, then the offline policy pattern
 # check (check_policy_patterns.mjs) when node is on PATH (reported as
 # skipped, not passed, without it), and exits non-zero if any fails.
 # Offline and read-only (the self-tests write only to temporary directories) —
@@ -58,6 +59,13 @@ fi
 
 printf '\n=== eval invocation (fake CLI) ===\n'
 if bash "${SCRIPT_DIR}/check_eval_invocation.sh"; then
+  :
+else
+  FAILED=1
+fi
+
+printf '\n=== install (scratch HOME) ===\n'
+if bash "${SCRIPT_DIR}/check_install.sh"; then
   :
 else
   FAILED=1

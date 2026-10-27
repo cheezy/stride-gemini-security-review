@@ -5,7 +5,8 @@
 # transform golden tests (run_transform_tests.sh) through bash, then the agent
 # contract check (check_agent_contract.ps1), then the eval invocation check
 # (check_eval_invocation.sh) through bash — each bash suite only when bash and
-# jq are on PATH — and exits non-zero if any fails. Offline and read-only (the
+# jq are on PATH — then the install check (check_install.ps1, which runs
+# install.ps1 into a scratch profile directory), and exits non-zero if any fails. Offline and read-only (the
 # self-tests write only to temporary directories) — suitable for gating a
 # release.
 #
@@ -73,6 +74,10 @@ if ($bash -and $jq) {
 } else {
     Write-Host 'skipped: check_eval_invocation.sh needs bash and jq on PATH'
 }
+
+Write-Host ''
+Write-Host '=== install (scratch profile) ==='
+if (-not (Invoke-Check 'check_install.ps1')) { $failed = $true }
 
 Write-Host ''
 Write-Host '=== policy patterns (offline, node) ==='

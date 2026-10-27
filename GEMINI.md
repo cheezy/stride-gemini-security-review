@@ -35,6 +35,13 @@ vulnerabilities across injection, auth/authz, data exposure, cryptography, input
 validation, race conditions, XSS/code execution, and insecure configuration;
 filters out low-impact noise (DoS, rate-limiting, memory exhaustion); and returns
 structured findings grouped by severity. Dispatched by `/security-review`.
+Its framework, supply-chain, CI/CD and agentic rule packs live in `packs/` and
+its considerations, result-file and reproduction rules in `modes/`, which it reads
+from this extension's directory only when the input needs them. Gemini CLI's
+`read_file` reaches them only when exactly this extension's directory is in the
+workspace (`--include-directories` or `context.includeDirectories`); without it
+the agent reviews with its core rules alone (see the README's *How rule packs
+load*).
 
 ## Deterministic tooling
 

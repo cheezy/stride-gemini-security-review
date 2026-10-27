@@ -153,6 +153,37 @@ else
   nope "install.ps1 does not copy policies/" "install.ps1: foreach (\$dir in @(... 'policies'))"
 fi
 
+# --- Packs and modes (W2482) --------------------------------------------------
+# The rule packs and mode files the agent reads on demand, at the extension
+# root (a .md under agents/ would register as an agent), and both installers
+# copying them (lib/check_agent_contract.sh checks their content).
+
+printf '\nPacks and modes\n'
+for p in android django express ios phoenix rails react-nextjs web-defense supply-chain ci-cd agentic; do
+  exists "packs/${p}.md" "rule pack ${p}"
+done
+for m in considerations result-file reproduction; do
+  exists "modes/${m}.md" "mode file ${m}"
+done
+for d in packs modes; do
+  if grep -qE "^for dir in .* ${d}(;| )" "${PLUGIN_ROOT}/install.sh"; then
+    ok "install.sh copies ${d}/"
+  else
+    nope "install.sh does not copy ${d}/" "install.sh: for dir in ... ${d}"
+  fi
+  if grep -qE "^ *foreach \(\\\$dir in @\(.*'${d}'" "${PLUGIN_ROOT}/install.ps1"; then
+    ok "install.ps1 copies ${d}/"
+  else
+    nope "install.ps1 does not copy ${d}/" "install.ps1: foreach (\$dir in @(... '${d}'))"
+  fi
+done
+agents_md="$(cd "${PLUGIN_ROOT}/agents" && find . -name '*.md' | sort | tr '\n' ' ')"
+if [ "$agents_md" = "./security-reviewer.md " ]; then
+  ok "agents/ holds only security-reviewer.md"
+else
+  nope "agents/ holds other .md files" "$agents_md"
+fi
+
 # --- Root docs & license ----------------------------------------------------
 
 printf '\nRoot docs\n'

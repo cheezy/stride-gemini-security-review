@@ -25,8 +25,11 @@
 # an installed copy. Gemini CLI has no flag that makes a subagent the session
 # agent, so each call runs with a scratch GEMINI_CLI_HOME whose
 # .gemini/extensions/ holds only a copy of this checkout's extension (manifest,
-# GEMINI.md, agents/, commands/, skills/ — never fixtures/ or lib/, and nothing
-# from the user's own ~/.gemini: no credentials, settings or login files),
+# GEMINI.md, agents/, commands/, skills/, packs/, modes/ — never fixtures/ or
+# lib/, and nothing from the user's own ~/.gemini: no credentials, settings or
+# login files), with that copy, and nothing wider, added to the workspace by
+# --include-directories so the agent's read_file reaches its rule packs and
+# mode files (W2482),
 # `-e <extension name>` enabling only that copy, from an empty scratch working
 # directory. The fixture prompt goes on stdin, never in the -p argument, so shell
 # metacharacters in a diff are never interpreted; the -p directive names
@@ -178,9 +181,10 @@ setup_scratch() {
   EVAL_CWD="$WORK_DIR/cwd"
   EVAL_HOME="$WORK_DIR/home"
   local dest="$EVAL_HOME/.gemini/extensions/$EXT_NAME"
+  EVAL_EXT_DIR="$dest"
   mkdir -p "$EVAL_CWD" "$dest"
   local item
-  for item in gemini-extension.json GEMINI.md agents commands skills; do
+  for item in gemini-extension.json GEMINI.md agents commands skills packs modes; do
     [ -e "$EXT_DIR/$item" ] && cp -R "$EXT_DIR/$item" "$dest/"
   done
   return 0
@@ -199,6 +203,7 @@ build_gemini_argv() {
   GEMINI_ARGV=(
     "$GEMINI_CLI" -p "$directive"
     -e "$EXT_NAME"
+    --include-directories "$EVAL_EXT_DIR"
     -o stream-json
     --approval-mode default
     --skip-trust

@@ -167,6 +167,29 @@ $instPs = Get-Content -LiteralPath (Join-Path $PluginRoot 'install.ps1')
 if (@($instPs | Where-Object { $_ -match "^ *foreach \(\`$dir in @\(.*'policies'" }).Count -gt 0) { Pass 'install.ps1 copies policies/' }
 else { Fail 'install.ps1 does not copy policies/' 'install.ps1: foreach ($dir in @(... ''policies''))' }
 
+# --- Packs and modes (W2482) --------------------------------------------------
+# The rule packs and mode files the agent reads on demand, at the extension
+# root (a .md under agents/ would register as an agent), and both installers
+# copying them (lib/check_agent_contract.ps1 checks their content).
+
+Write-Host ''
+Write-Host 'Packs and modes'
+foreach ($p in @('android', 'django', 'express', 'ios', 'phoenix', 'rails', 'react-nextjs', 'web-defense', 'supply-chain', 'ci-cd', 'agentic')) {
+    Test-Exists "packs/$p.md" "rule pack $p"
+}
+foreach ($m in @('considerations', 'result-file', 'reproduction')) {
+    Test-Exists "modes/$m.md" "mode file $m"
+}
+foreach ($d in @('packs', 'modes')) {
+    if (@($instSh | Where-Object { $_ -match "^for dir in .* $d(;| )" }).Count -gt 0) { Pass "install.sh copies $d/" }
+    else { Fail "install.sh does not copy $d/" "install.sh: for dir in ... $d" }
+    if (@($instPs | Where-Object { $_ -match "^ *foreach \(\`$dir in @\(.*'$d'" }).Count -gt 0) { Pass "install.ps1 copies $d/" }
+    else { Fail "install.ps1 does not copy $d/" "install.ps1: foreach (`$dir in @(... '$d'))" }
+}
+$agentsMd = @(Get-ChildItem -LiteralPath (Join-Path $PluginRoot 'agents') -Recurse -File -Filter '*.md' | ForEach-Object { $_.FullName.Substring((Join-Path $PluginRoot 'agents').Length + 1) -replace '\\', '/' })
+if ($agentsMd.Count -eq 1 -and $agentsMd[0] -eq 'security-reviewer.md') { Pass 'agents/ holds only security-reviewer.md' }
+else { Fail 'agents/ holds other .md files' ($agentsMd -join ' ') }
+
 # --- Root docs & license ----------------------------------------------------
 
 Write-Host ''

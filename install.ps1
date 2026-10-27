@@ -4,8 +4,8 @@
 
 .DESCRIPTION
     Installs gemini-extension.json, GEMINI.md, and the commands/, skills/,
-    agents/, lib/, fixtures/ and policies/ directories into your Gemini extensions
-    directory. By default installs globally to
+    agents/, lib/, fixtures/, policies/, packs/ and modes/ directories into your
+    Gemini extensions directory. By default installs globally to
     $env:USERPROFILE\.gemini\extensions\stride-gemini-security-review\ so the
     /security-review command is available in all projects. Use -Project to
     install to .\.gemini\extensions\stride-gemini-security-review\ in the
@@ -84,7 +84,7 @@ try {
     Copy-Item (Join-Path $Src 'GEMINI.md')             -Destination $InstallDir -Force
     $license = Join-Path $Src 'LICENSE'
     if (Test-Path $license) { Copy-Item $license -Destination $InstallDir -Force }
-    foreach ($dir in @('commands', 'skills', 'agents', 'lib', 'fixtures', 'policies')) {
+    foreach ($dir in @('commands', 'skills', 'agents', 'lib', 'fixtures', 'policies', 'packs', 'modes')) {
         $dest = Join-Path $InstallDir $dir
         Copy-Item (Join-Path $Src $dir) -Destination $dest -Recurse -Force
     }
@@ -99,3 +99,8 @@ Write-Host 'Next steps:'
 Write-Host '  1. Restart Gemini CLI so it picks up the new extension (/security-review).'
 Write-Host '  2. From a project with staged or committed changes, run /security-review'
 Write-Host '     to review the current diff, or /security-review --full to scan the tree.'
+Write-Host '  3. Let the security-reviewer agent read its rule packs: add exactly this'
+Write-Host '     directory, and nothing wider, to the workspace, with'
+Write-Host "       gemini --include-directories `"$((Resolve-Path $InstallDir).Path)`""
+Write-Host '     or the same path in context.includeDirectories in settings.json.'
+Write-Host '     Without it the agent reviews with its core rules alone.'

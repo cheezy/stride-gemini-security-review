@@ -133,6 +133,8 @@ ls -A "$H/.gemini/extensions" > "$R/extensions_ls" 2>/dev/null
 ext="$(head -n 1 "$R/extensions_ls" 2>/dev/null)"
 ls -A "$H/.gemini/extensions/$ext" > "$R/ext_ls" 2>/dev/null
 cp "$H/.gemini/extensions/$ext/agents/security-reviewer.md" "$R/agent.md" 2>/dev/null
+cp "$H/.gemini/extensions/$ext/packs/phoenix.md" "$R/phoenix.md" 2>/dev/null
+cp "$H/.gemini/extensions/$ext/modes/considerations.md" "$R/considerations.md" 2>/dev/null
 stdin="$(cat)"
 printf '%s' "$stdin" > "$R/stdin"
 case "${FAKE_EXIT:-0}" in
@@ -230,7 +232,7 @@ check "the failure names mktemp"                     contains "$TMP/badtmp.out" 
 run_case fake -- --fixture "$FIXTURE"
 R="$TMP/rec-fake"
 L="$TMP/logs-fake"
-want_ext_ls="$(cd "$ROOT_DIR" && for i in gemini-extension.json GEMINI.md agents commands skills; do [ -e "$i" ] && echo "$i"; done | LC_ALL=C sort)"
+want_ext_ls="$(cd "$ROOT_DIR" && for i in gemini-extension.json GEMINI.md agents commands skills packs modes; do [ -e "$i" ] && echo "$i"; done | LC_ALL=C sort)"
 
 check "a canned delegation scores ok (exit 0)"       test "$(rc_of fake)" -eq 0
 check "the TAP line is ok"                           contains "$TMP/fake.out" "ok 1 - $FIXTURE"
@@ -248,6 +250,10 @@ check "its .gemini holds only extensions"            test "$(cat "$R/dotgemini_l
 check "extensions holds only this extension"         test "$(cat "$R/extensions_ls" 2>/dev/null)" = "$EXT_NAME"
 check "the copy holds exactly the allow-list"        test "$(LC_ALL=C sort "$R/ext_ls" 2>/dev/null)" = "$want_ext_ls"
 check "the copy carries this checkout's agent"       cmp -s "$R/agent.md" "$ROOT_DIR/agents/security-reviewer.md"
+check "the copy carries this checkout's packs/phoenix.md" cmp -s "$R/phoenix.md" "$ROOT_DIR/packs/phoenix.md"
+check "the copy carries this checkout's modes/considerations.md" cmp -s "$R/considerations.md" "$ROOT_DIR/modes/considerations.md"
+check "the workspace adds exactly the extension copy" test "$(awk 'p { print; exit } $0 == "--include-directories" { p = 1 }' "$R/argv")" = "$(cat "$R/cli_home" 2>/dev/null)/.gemini/extensions/$EXT_NAME"
+check "the CLI received one --include-directories"   test "$(grep -cxF -- "--include-directories" "$R/argv")" = 1
 check "the user's HOME is left as it is"             test "$(cat "$R/home" 2>/dev/null)" = "${HOME:-}"
 check "the prompt is in considerations mode"         contains "$R/stdin" "$CONS_TAG"
 check "the prompt opens with the considerations tag on its own line" opens_with "$R/stdin" "$CONS_TAG"
@@ -376,6 +382,29 @@ check "W2278 break-it: the reverted copy's delegated prompt is kept" contains "$
 RUNNER="$EV/lib/run_eval.sh" run_case brk_tag_ff FIXTURES_DIR="$ROOT_DIR/fixtures" EVAL_EXTENSION_DIR="$ROOT_DIR" -- --fixture sql_injection.py
 check "W2278 break-it: the reverted copy sends mode: full_file" opens_with "$TMP/rec-brk_tag_ff/stdin" "mode: full_file"
 check "W2278 break-it: reverting run_eval.sh to send mode: full_file fails the tag check" fails opens_with "$TMP/rec-brk_tag_ff/stdin" "$FF_TAG"
+
+# W2482: the scratch copy carries packs/ and modes/, and the workspace adds
+# exactly that copy. Drop each from the copy's allow-list, drop the include, and
+# widen it to the scratch home; each pin that says so must fail.
+sed 's/for item in gemini-extension.json GEMINI.md agents commands skills packs modes; do/for item in gemini-extension.json GEMINI.md agents commands skills modes; do/' "$RUN_EVAL" > "$EV/lib/run_eval.sh"
+check "W2482 break-it: packs/ was dropped from the copy's allow-list" lacks "$EV/lib/run_eval.sh" "skills packs modes; do"
+RUNNER="$EV/lib/run_eval.sh" run_case brk_nopacks FIXTURES_DIR="$ROOT_DIR/fixtures" EVAL_EXTENSION_DIR="$ROOT_DIR" -- --fixture "$FIXTURE"
+check "W2482 break-it: without packs/ the allow-list pin fails" fails test "$(LC_ALL=C sort "$TMP/rec-brk_nopacks/ext_ls" 2>/dev/null)" = "$want_ext_ls"
+check "W2482 break-it: without packs/ the packs/phoenix.md pin fails" fails cmp -s "$TMP/rec-brk_nopacks/phoenix.md" "$ROOT_DIR/packs/phoenix.md"
+sed 's/for item in gemini-extension.json GEMINI.md agents commands skills packs modes; do/for item in gemini-extension.json GEMINI.md agents commands skills packs; do/' "$RUN_EVAL" > "$EV/lib/run_eval.sh"
+check "W2482 break-it: modes/ was dropped from the copy's allow-list" lacks "$EV/lib/run_eval.sh" "skills packs modes; do"
+RUNNER="$EV/lib/run_eval.sh" run_case brk_nomodes FIXTURES_DIR="$ROOT_DIR/fixtures" EVAL_EXTENSION_DIR="$ROOT_DIR" -- --fixture "$FIXTURE"
+check "W2482 break-it: without modes/ the modes/considerations.md pin fails" fails cmp -s "$TMP/rec-brk_nomodes/considerations.md" "$ROOT_DIR/modes/considerations.md"
+grep -vF -- '--include-directories "$EVAL_EXT_DIR"' "$RUN_EVAL" > "$EV/lib/run_eval.sh"
+check "W2482 break-it: the include was removed"       lacks "$EV/lib/run_eval.sh" '--include-directories "$EVAL_EXT_DIR"'
+RUNNER="$EV/lib/run_eval.sh" run_case brk_noinc FIXTURES_DIR="$ROOT_DIR/fixtures" EVAL_EXTENSION_DIR="$ROOT_DIR" -- --fixture "$FIXTURE"
+check "W2482 break-it: without the include the one-include pin fails" fails test "$(grep -cxF -- "--include-directories" "$TMP/rec-brk_noinc/argv")" = 1
+check "W2482 break-it: ... and the exact-copy pin" fails test "$(awk 'p { print; exit } $0 == "--include-directories" { p = 1 }' "$TMP/rec-brk_noinc/argv")" = "$(cat "$TMP/rec-brk_noinc/cli_home" 2>/dev/null)/.gemini/extensions/$EXT_NAME"
+sed 's/--include-directories "$EVAL_EXT_DIR"/--include-directories "$EVAL_HOME"/' "$RUN_EVAL" > "$EV/lib/run_eval.sh"
+check "W2482 break-it: the include was widened to the scratch home" contains "$EV/lib/run_eval.sh" '--include-directories "$EVAL_HOME"'
+RUNNER="$EV/lib/run_eval.sh" run_case brk_wideinc FIXTURES_DIR="$ROOT_DIR/fixtures" EVAL_EXTENSION_DIR="$ROOT_DIR" -- --fixture "$FIXTURE"
+check "W2482 break-it: a widened include fails the exact-copy pin" fails test "$(awk 'p { print; exit } $0 == "--include-directories" { p = 1 }' "$TMP/rec-brk_wideinc/argv")" = "$(cat "$TMP/rec-brk_wideinc/cli_home" 2>/dev/null)/.gemini/extensions/$EXT_NAME"
+check "W2482 break-it: ... while it still passes one --include-directories" test "$(grep -cxF -- "--include-directories" "$TMP/rec-brk_wideinc/argv")" = 1
 
 # --- 9. an empty fixture set is not a pass ----------------------------------
 EMPTY="$TMP/empty"
