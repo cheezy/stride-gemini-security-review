@@ -97,7 +97,7 @@ done
 # --- lib tooling ------------------------------------------------------------
 
 printf '\nlib tooling\n'
-for tool in sarif_transform.sh run_eval.sh run_transform_tests.sh check_fixtures.sh; do
+for tool in sarif_transform.sh run_eval.sh run_transform_tests.sh check_fixtures.sh check_eval_invocation.sh; do
   exists "lib/${tool}" "lib helper ${tool}"
 done
 
@@ -109,14 +109,25 @@ for g in input_findings.json fingerprint.golden dedup.golden.json sarif.golden.j
   exists "fixtures/golden/${g}" "golden ${g}"
 done
 
-# Considerations-mode controls: a positive control (unmitigated verdict + backing
-# finding) and a negative control (all mitigated, no spurious finding), each a
-# .diff paired with a .considerations sidecar.
-printf '\nConsiderations controls\n'
-for c in token_logging_unmitigated parameterized_query_all_mitigated; do
-  exists "fixtures/considerations/${c}.diff" "considerations control ${c}.diff"
-  exists "fixtures/considerations/${c}.considerations" "considerations control ${c}.considerations"
+# Considerations-mode fixtures: each is a .diff paired with a .considerations
+# sidecar. The stems are read from disk rather than listed here, so a new pair
+# needs no edit to this file; check_fixtures.sh owns the pairing, row and
+# verdict-count rules. This only requires that the directory holds at least one
+# .diff and that every .diff found has its sidecar.
+printf '\nConsiderations fixtures\n'
+cons_found=0
+for d in "${PLUGIN_ROOT}"/fixtures/considerations/*.diff; do
+  [ -e "$d" ] || continue
+  cons_found=$(( cons_found + 1 ))
+  c="$(basename "$d" .diff)"
+  exists "fixtures/considerations/${c}.diff" "considerations fixture ${c}.diff"
+  exists "fixtures/considerations/${c}.considerations" "considerations input ${c}.considerations"
 done
+if [ "$cons_found" -gt 0 ]; then
+  ok "fixtures/considerations/ holds ${cons_found} .diff fixture(s)"
+else
+  nope "no considerations fixtures found" "fixtures/considerations/*.diff"
+fi
 
 # --- Install scripts --------------------------------------------------------
 

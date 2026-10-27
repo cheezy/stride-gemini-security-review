@@ -109,7 +109,7 @@ foreach ($cmd in @('security-review')) {
 
 Write-Host ''
 Write-Host 'lib tooling'
-foreach ($tool in @('sarif_transform.sh', 'run_eval.sh', 'run_transform_tests.sh', 'check_fixtures.sh')) {
+foreach ($tool in @('sarif_transform.sh', 'run_eval.sh', 'run_transform_tests.sh', 'check_fixtures.sh', 'check_eval_invocation.sh')) {
     Test-Exists "lib/$tool" "lib helper $tool"
 }
 
@@ -122,14 +122,27 @@ foreach ($g in @('input_findings.json', 'fingerprint.golden', 'dedup.golden.json
     Test-Exists "fixtures/golden/$g" "golden $g"
 }
 
-# Considerations-mode controls: a positive control (unmitigated verdict + backing
-# finding) and a negative control (all mitigated, no spurious finding), each a
-# .diff paired with a .considerations sidecar.
+# Considerations-mode fixtures: each is a .diff paired with a .considerations
+# sidecar. The stems are read from disk rather than listed here, so a new pair
+# needs no edit to this file; check_fixtures.sh owns the pairing, row and
+# verdict-count rules. This only requires that the directory holds at least one
+# .diff and that every .diff found has its sidecar.
 Write-Host ''
-Write-Host 'Considerations controls'
-foreach ($c in @('token_logging_unmitigated', 'parameterized_query_all_mitigated')) {
-    Test-Exists "fixtures/considerations/$c.diff" "considerations control $c.diff"
-    Test-Exists "fixtures/considerations/$c.considerations" "considerations control $c.considerations"
+Write-Host 'Considerations fixtures'
+$consDir = Join-Path $PluginRoot 'fixtures/considerations'
+$consDiffs = @()
+if (Test-Path -LiteralPath $consDir) {
+    $consDiffs = @(Get-ChildItem -LiteralPath $consDir -Filter '*.diff' -File | Sort-Object Name)
+}
+foreach ($d in $consDiffs) {
+    $c = [System.IO.Path]::GetFileNameWithoutExtension($d.Name)
+    Test-Exists "fixtures/considerations/$c.diff" "considerations fixture $c.diff"
+    Test-Exists "fixtures/considerations/$c.considerations" "considerations input $c.considerations"
+}
+if ($consDiffs.Count -gt 0) {
+    Pass "fixtures/considerations/ holds $($consDiffs.Count) .diff fixture(s)"
+} else {
+    Fail 'no considerations fixtures found' 'fixtures/considerations/*.diff'
 }
 
 # --- Install scripts --------------------------------------------------------

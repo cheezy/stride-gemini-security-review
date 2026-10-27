@@ -9,10 +9,11 @@
 # fast and cheap when the two sets diverge — no API key, no LLM CLI, just a
 # set comparison — so CI catches the drift before spending money on the eval.
 #
-# Exit 0 when the fixture files and the EXPECTED.md rows are in exact parity
-# AND the README's eval-runner annotation stays count-agnostic; exit 1 (listing
-# the offenders) on parity divergence or a hardcoded README fixture-count
-# annotation; exit 2 on a setup error.
+# Exit 0 when the fixture files and the EXPECTED.md rows are in exact parity,
+# every considerations fixture is paired with its sidecar and has one expected
+# verdict per consideration, AND the README's eval-runner annotation stays
+# count-agnostic; exit 1 (listing the offenders) on any of those; exit 2 on a
+# setup error.
 
 set -euo pipefail
 
@@ -63,8 +64,55 @@ if [ "$fail" -ne 0 ]; then
   exit 1
 fi
 
+# Considerations-mode pairing (W2274): every `considerations/*.diff` needs its
+# `.considerations` sidecar and vice versa, and the row's verdict list must have
+# exactly one verdict per non-empty sidecar line — the agent emits one verdict
+# per consideration, so a count mismatch can never pass and would only surface
+# as a paid eval failure.
+cons_problems=""
+if [ -d "$FIX_DIR/considerations" ]; then
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    stem="${f%.*}"
+    case "$f" in
+      *.diff)
+        [ -f "$FIX_DIR/$stem.considerations" ] || { cons_problems="${cons_problems}$f has no $stem.considerations sidecar"$'\n'; continue; }
+        want="$(grep -c . "$FIX_DIR/$stem.considerations" || true)"
+        got="$(awk -v p="$f" '
+          /^- \[[ x]\] `[^`]+`/ {
+            match($0, /`[^`]+`/)
+            if (substr($0, RSTART + 1, RLENGTH - 2) != p) next
+            rest = substr($0, RSTART + RLENGTH)
+            if (rest !~ /^ +→ +CONSIDERATIONS +/) { print "not-a-considerations-row"; exit }
+            sub(/^ +→ +CONSIDERATIONS +/, "", rest)
+            split(rest, hp, " ")
+            print split(hp[1], vv, ",")
+            exit
+          }
+        ' "$EXPECTED")"
+        if [ "$got" = "not-a-considerations-row" ]; then
+          cons_problems="${cons_problems}$f's EXPECTED.md row is not a → CONSIDERATIONS row"$'\n'
+        elif [ -n "$got" ] && [ "$got" != "$want" ]; then
+          cons_problems="${cons_problems}$f: EXPECTED.md lists $got verdict(s) but $stem.considerations has $want consideration(s)"$'\n'
+        fi
+        ;;
+      *.considerations)
+        [ -f "$FIX_DIR/$stem.diff" ] || cons_problems="${cons_problems}$f has no $stem.diff fixture"$'\n'
+        ;;
+    esac
+  done < <(cd "$FIX_DIR" && find considerations -type f \( -name '*.diff' -o -name '*.considerations' \) | sort)
+fi
+if [ -n "$cons_problems" ]; then
+  printf 'Considerations fixtures out of step with their sidecars or rows:\n' >&2
+  printf '%s' "$cons_problems" | sed 's/^/  - /' >&2
+  printf 'FAIL: considerations fixtures are inconsistent.\n' >&2
+  exit 1
+fi
+
 count="$(printf '%s\n' "$disk" | sed '/^$/d' | wc -l | tr -d ' ')"
 printf 'OK: %s fixtures, each with exactly one matching EXPECTED.md row.\n' "$count"
+cons_count="$(printf '%s\n' "$disk" | grep -c '^considerations/.*\.diff$' || true)"
+printf 'OK: %s considerations fixtures, each paired with its sidecar and one verdict per consideration.\n' "$cons_count"
 
 # Drift guard: the README's eval-runner annotation must stay count-agnostic.
 # W1274 made it so; "(64 today)" regressed it and went stale within two releases

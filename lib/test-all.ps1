@@ -2,9 +2,14 @@
 # PowerShell mirror of test-all.sh.
 #
 # Runs the structure check, the frontmatter check and the agent contract check
-# (check_agent_contract.ps1) in sequence and exits non-zero if any fails.
-# Offline and read-only (the contract check's self-tests write only to a
-# temporary directory) — suitable for gating a release.
+# (check_agent_contract.ps1) in sequence, then the eval invocation check
+# (check_eval_invocation.sh) through bash when bash and jq are on PATH, and
+# exits non-zero if any fails. Offline and read-only (the self-tests write only
+# to temporary directories) — suitable for gating a release.
+#
+# The eval invocation check has no PowerShell mirror: what it pins is how the
+# bash runner, lib/run_eval.sh, invokes gemini. Without bash or jq it is
+# reported as skipped, not passed.
 #
 # Usage:
 #   pwsh -NoProfile -File lib\test-all.ps1
@@ -42,6 +47,17 @@ if (-not (Invoke-Check 'test-frontmatter.ps1')) { $failed = $true }
 Write-Host ''
 Write-Host '=== agent contract ==='
 if (-not (Invoke-Check 'check_agent_contract.ps1')) { $failed = $true }
+
+Write-Host ''
+Write-Host '=== eval invocation (fake CLI) ==='
+$bash = Get-Command bash -ErrorAction SilentlyContinue
+$jq = Get-Command jq -ErrorAction SilentlyContinue
+if ($bash -and $jq) {
+    & $bash.Source (Join-Path $ScriptDir 'check_eval_invocation.sh') | Out-Host
+    if ($LASTEXITCODE -ne 0) { $failed = $true }
+} else {
+    Write-Host 'skipped: check_eval_invocation.sh needs bash and jq on PATH'
+}
 
 Write-Host ''
 Write-Host '=== result ==='

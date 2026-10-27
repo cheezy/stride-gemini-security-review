@@ -124,12 +124,41 @@ Framework packs map to the existing universal `vulnerability_class` values — t
 
 - `sarif_transform.sh` — the reference implementation of the SARIF v2.1.0 mapping, dedup, fingerprint, and fail-on transforms.
 - `run_transform_tests.sh` — golden-file + spec-assertion tests (TAP 13) that lock those transforms byte-for-byte.
-- `check_fixtures.sh` — parity guard between `fixtures/` and `fixtures/EXPECTED.md`.
-- `run_eval.sh` — the agent eval runner: dispatches the `security-reviewer` agent over each fixture (via the Gemini CLI) and asserts the expectations in `EXPECTED.md`, including the considerations-mode positive/negative controls. `--dry-run` exercises the parser/comparator without an API call.
+- `check_fixtures.sh` — parity guard between `fixtures/` and `fixtures/EXPECTED.md`; it also checks that each considerations-mode `.diff` has its `.considerations` sidecar (and the reverse) and that its row lists one verdict per consideration.
+- `run_eval.sh` — the agent eval runner: hands each fixture to **this checkout's** `security-reviewer` subagent through Gemini CLI and asserts the expectations in `EXPECTED.md`, including the considerations-mode rows. A fixture is scored only when the CLI's event stream shows the main model delegating to that subagent; see [Running the eval](#running-the-eval). `--dry-run` exercises the parser/comparator without an API call.
+- `check_eval_invocation.sh` — model-free checks on how `run_eval.sh` invokes Gemini CLI, against a fake `gemini` on a temporary `PATH`: the agent selection, the scratch home and working directory, the fixture on stdin, the refusal without auth, the failure when the main model answers without delegating, the empty-fixture-set refusal, `--only`, and `check_fixtures.sh`'s considerations guards, each with a break-it. Needs no model, no credentials and no network.
 - `check_agent_contract.sh` (+ PowerShell mirror) — contract pins on `agents/security-reviewer.md`, each with a self-testing break-it. Its first pin refuses any `${word}` token in the agent, because Gemini CLI templates the agent body and refuses to load an agent whose placeholder it cannot fill. Its W2284 section pins the `SECURITY_RESULT_PATH` result file: the dispatch-line-only rule, the path rules word for word from upstream, the no-path fallback, the `write_file` limit to that one path, the unfenced 10-line summary and the `NOT WRITTEN` fallback, and refuses Claude Code's Bash write wording coming back.
-- `test-structure.sh` / `test-frontmatter.sh` / `test-all.sh` (+ PowerShell mirrors) — offline structure and frontmatter self-validation; `test-all` also runs the agent contract check.
+- `test-structure.sh` / `test-frontmatter.sh` / `test-all.sh` (+ PowerShell mirrors) — offline structure and frontmatter self-validation; `test-all` also runs the agent contract check and the eval invocation check (`test-all.ps1` runs the latter through `bash` when `bash` and `jq` are on `PATH`, and reports it skipped otherwise).
 
-`fixtures/` holds the framework rule-pack fixtures with paired positive- and negative-controls (including considerations-mode controls) and the golden files under `fixtures/golden/`.
+`fixtures/` holds the framework rule-pack fixtures with paired positive- and negative-controls (including considerations-mode fixtures: a positive and a negative control, a `partial` verdict, a `None —` placeholder, injection text inside a consideration and inside the diff, a noise-class consideration and a gap in pre-existing code) and the golden files under `fixtures/golden/`.
+
+### Running the eval
+
+Gemini CLI has no flag that makes a subagent the session agent, so `lib/run_eval.sh` asks the main model to delegate and then checks that it did. Each fixture runs as:
+
+```bash
+GEMINI_CLI_HOME=<scratch home> gemini -p '@security-reviewer Delegate the security review of the input above …' \
+  -e stride-gemini-security-review -o stream-json --approval-mode default --skip-trust   # fixture on stdin
+```
+
+- The scratch home's `.gemini/extensions/` holds only a copy of this checkout's extension (manifest, `GEMINI.md`, `agents/`, `commands/`, `skills/`), so an edit to `agents/security-reviewer.md` is what gets scored. Nothing from your own `~/.gemini` is copied: no credentials, settings or login files.
+- The call runs from an empty scratch directory, so the agent cannot read the expected answers in `fixtures/EXPECTED.md`. The fixture prompt goes on stdin, never in `-p`, so shell metacharacters in a diff are never interpreted.
+- `--approval-mode default` keeps Gemini CLI's headless policy: `invoke_agent` is allowed, and the subagent's `run_shell_command` and `write_file` are denied. `--skip-trust` trusts the scratch directory for this process only.
+- A fixture is scored only when the `stream-json` output shows an `invoke_agent` call naming `security-reviewer` whose result succeeded. If the main model answers by itself, delegates to another agent, or hits a turn limit (exit `53`), the fixture is `not ok`. Gemini CLI 0.65.0 does not stream the subagent's own result, so the JSON scored is the main model's reply after the call returns; the prompt it delegated is kept in `logs/<stem>.agent_prompt.txt`.
+- Auth comes from the environment only, checked in the order Gemini CLI resolves it: a login with Google (`GOOGLE_GENAI_USE_GCA=true`), Vertex AI (`GOOGLE_GENAI_USE_VERTEXAI=true` with `GOOGLE_API_KEY`, or with `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`), `GOOGLE_GEMINI_BASE_URL`, `GEMINI_API_KEY`, then compute ADC (`GEMINI_CLI_USE_COMPUTE_ADC=true`, or Cloud Shell). A login with Google needs the OAuth files the eval does not copy, so it is refused. With no usable auth the runner exits `2`; a CLI that still reports itself unauthenticated (exit `41`) or the workspace untrusted (exit `55`) stops the run with `Bail out!` and exit `2`. Only the auth mode's name is printed, never a value.
+
+Every run prints the exact command as `# invocation: …` and the auth mode as `# auth: …` right after the TAP plan line; `--dry-run` prints them without calling Gemini CLI, and `lib/check_eval_invocation.sh` pins them.
+
+```bash
+bash lib/run_eval.sh                          # every expectation in EXPECTED.md — check_fixtures.sh prints the current count
+bash lib/run_eval.sh --fixture considerations/search_sort_partial.diff
+bash lib/run_eval.sh --only considerations/   # only fixtures whose path starts with the prefix
+bash lib/run_eval.sh --dry-run                # parser/comparator only; no API calls
+```
+
+`EVAL_EXTENSION_DIR` (default: the repo root) and `EVAL_AGENT` (default: `security-reviewer`) override the extension copied and the subagent selected; `GEMINI_CLI`, `FIXTURES_DIR` and `LOG_DIR` work as before. An empty fixture set, or an `--only` prefix that matches nothing, exits `2` rather than passing. Per fixture, `logs/` gets the event stream (`.raw.txt`), the CLI's stderr (`.err.txt`), the delegated prompt (`.agent_prompt.txt`), the reply scored (`.text.txt`) and the parsed document (`.json`).
+
+`fixtures/EXPECTED.md` ends with a **Recorded runs** table: the date, CLI version, auth mode and TAP result of each real run, so a ticked row always traces back to a run rather than to a hand edit. No run of this runner has been recorded yet, so every row is unticked.
 
 ## How this relates to `stride-gemini`
 
