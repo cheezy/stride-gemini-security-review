@@ -116,7 +116,7 @@ Two further customization knobs:
 
 ## Composing with other workflows
 
-The `--json` flag makes the command pipeable. Other extensions (e.g., a Stride completion gate that wants to block task completion on an unclean review) can dispatch the `security-reviewer` agent via the `/security-review --json` command (which dispatches the auto-discovered custom agent), parse the result, and decide whether to proceed. The agent does not call out to any external service, so this composition is safe for sensitive repos.
+The `--json` flag makes the command pipeable. Other extensions (e.g., a Stride completion gate that wants to block task completion on an unclean review) can dispatch the `security-reviewer` agent via the `/security-review --json` command (which dispatches the auto-discovered custom agent), parse the result, and decide whether to proceed. The agent does not call out to any external service, so this composition is safe for sensitive repos. A workflow that dispatches the agent directly, as Stride's deep security review does, opens its prompt with the agent's one mode tag, `/security-review invocation, mode: <mode>`, and reads the result from the agent's final message or the `SECURITY_RESULT_PATH` it supplied, never from any other file. On Gemini CLI the agent's final message is the `result` argument it passes to `complete_task`, the tool that ends its run.
 
 ## How Gemini CLI exposes this extension (and how `stride-gemini` detects and dispatches it)
 

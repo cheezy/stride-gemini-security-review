@@ -20,6 +20,9 @@
 #      only an allow-listed copy of this extension (no credentials, no fixtures),
 #      the user's HOME untouched, the considerations-mode prompt on stdin and not
 #      in -p. A canned delegation scores `ok`; the auth value is never printed.
+#      Each prompt opens with the agent's one mode tag on its own line,
+#      `/security-review invocation, mode: considerations` or `..., mode:
+#      full_file` (W2278, upstream a01cb19), never a bare `mode:` line.
 #   3. Fixture text with quotes, `$` and a command substitution reaches the CLI
 #      on stdin byte for byte and is never interpreted.
 #   4. With no usable auth in the environment the run refuses with exit 2 and
@@ -31,7 +34,9 @@
 #      agent, or a failed invoke_agent result, each fails the fixture.
 #   8. Break-its on a scratch copy of run_eval.sh (matrix row 6): dropping the
 #      agent selection from the invocation fails the checks above, and dropping
-#      the agent-name filter lets another agent's answer score.
+#      the agent-name filter lets another agent's answer score. Reverting the
+#      prompt to the bare `mode: considerations` and `mode: full_file` lines
+#      fails the tag checks (W2278).
 #   9. An empty fixture set reports zero cases and exits 2 instead of passing
 #      (matrix row 3), as does --only with no match.
 #  10. --only <prefix> keeps exactly the matching rows.
@@ -86,6 +91,10 @@ check() { # $1=label; remaining args = a test command
 contains() { grep -qF -- "$2" "$1"; }
 lacks() { ! grep -qF -- "$2" "$1"; }
 fails() { ! "$@"; }
+# W2278: the agent's one accepted mode tag, as upstream a01cb19 spells it.
+CONS_TAG='/security-review invocation, mode: considerations'
+FF_TAG='/security-review invocation, mode: full_file'
+opens_with() { [ "$(head -n 1 "$1" 2>/dev/null)" = "$2" ]; }
 outside_repo() { case "$1" in "$ROOT_DIR"|"$ROOT_DIR"/*|'') return 1 ;; *) return 0 ;; esac; }
 jq_holds() { jq -e "$2" "$1" >/dev/null 2>&1; }
 none_has_sentinel() { ! grep -rqF -- "$KEY_SENTINEL" "$@" 2>/dev/null; }
@@ -240,12 +249,13 @@ check "extensions holds only this extension"         test "$(cat "$R/extensions_
 check "the copy holds exactly the allow-list"        test "$(LC_ALL=C sort "$R/ext_ls" 2>/dev/null)" = "$want_ext_ls"
 check "the copy carries this checkout's agent"       cmp -s "$R/agent.md" "$ROOT_DIR/agents/security-reviewer.md"
 check "the user's HOME is left as it is"             test "$(cat "$R/home" 2>/dev/null)" = "${HOME:-}"
-check "the prompt is in considerations mode"         contains "$R/stdin" "mode: considerations"
+check "the prompt is in considerations mode"         contains "$R/stdin" "$CONS_TAG"
+check "the prompt opens with the considerations tag on its own line" opens_with "$R/stdin" "$CONS_TAG"
 check "the prompt carries the sidecar's first line"  contains "$R/stdin" "$(head -n 1 "$ROOT_DIR/fixtures/${FIXTURE%.diff}.considerations")"
 check "the -p directive carries no fixture text"     lacks "$R/pval" "mode: considerations"
 check "the CLI's stderr is kept"                     test -f "$L/$LOGSTEM.err.txt"
 check "the event stream is kept"                     contains "$L/$LOGSTEM.raw.txt" '"invoke_agent"'
-check "the delegated prompt is kept"                 contains "$L/$LOGSTEM.agent_prompt.txt" "mode: considerations"
+check "the delegated prompt is kept"                 contains "$L/$LOGSTEM.agent_prompt.txt" "$CONS_TAG"
 check "the reply was joined from the assistant deltas" jq_holds "$L/$LOGSTEM.json" '.consideration_verdicts | length == 2'
 check "the key never reaches output or logs"         none_has_sentinel "$TMP/fake.out" "$L"
 check "the runner removed its scratch directory"     test -z "$(ls -A "$TMP/tmpdir")"
@@ -350,6 +360,22 @@ sed "s/  printf '# auth: %s\\\\n' \"\$AUTH_MODE\"/&; printf '# key: %s\\\\n' \"\
 check "break-it: the key is now echoed"              contains "$EV/lib/run_eval.sh" "printf '# key: %s"
 RUNNER="$EV/lib/run_eval.sh" run_case brk_key FIXTURES_DIR="$ROOT_DIR/fixtures" EVAL_EXTENSION_DIR="$ROOT_DIR" -- --fixture "$FIXTURE"
 check "break-it: the key-never-printed pin now fails" fails none_has_sentinel "$TMP/brk_key.out" "$TMP/logs-brk_key"
+
+# W2278: the full_file prompt opens with its tag too, and reverting run_eval.sh
+# to the bare `mode:` lines it sent before a01cb19 fails both tag checks.
+run_case fullfile -- --fixture sql_injection.py
+check "a full_file prompt opens with the full_file tag on its own line" opens_with "$TMP/rec-fullfile/stdin" "$FF_TAG"
+sed "s|printf '/security-review invocation, mode: |printf 'mode: |" "$RUN_EVAL" > "$EV/lib/run_eval.sh"
+check "W2278 break-it: run_eval.sh was reverted to the bare mode lines" lacks "$EV/lib/run_eval.sh" "printf '/security-review invocation, mode: "
+RUNNER="$EV/lib/run_eval.sh" run_case brk_tag FIXTURES_DIR="$ROOT_DIR/fixtures" EVAL_EXTENSION_DIR="$ROOT_DIR" -- --fixture "$FIXTURE"
+check "W2278 break-it: the reverted copy sends mode: considerations" opens_with "$TMP/rec-brk_tag/stdin" "mode: considerations"
+check "W2278 break-it: reverting run_eval.sh to send mode: considerations fails the tag check" fails opens_with "$TMP/rec-brk_tag/stdin" "$CONS_TAG"
+check "W2278 break-it: ... and the considerations-mode pin" fails contains "$TMP/rec-brk_tag/stdin" "$CONS_TAG"
+check "W2278 break-it: ... and the delegated-prompt pin" fails contains "$TMP/logs-brk_tag/$LOGSTEM.agent_prompt.txt" "$CONS_TAG"
+check "W2278 break-it: the reverted copy's delegated prompt is kept" contains "$TMP/logs-brk_tag/$LOGSTEM.agent_prompt.txt" "mode: considerations"
+RUNNER="$EV/lib/run_eval.sh" run_case brk_tag_ff FIXTURES_DIR="$ROOT_DIR/fixtures" EVAL_EXTENSION_DIR="$ROOT_DIR" -- --fixture sql_injection.py
+check "W2278 break-it: the reverted copy sends mode: full_file" opens_with "$TMP/rec-brk_tag_ff/stdin" "mode: full_file"
+check "W2278 break-it: reverting run_eval.sh to send mode: full_file fails the tag check" fails opens_with "$TMP/rec-brk_tag_ff/stdin" "$FF_TAG"
 
 # --- 9. an empty fixture set is not a pass ----------------------------------
 EMPTY="$TMP/empty"
