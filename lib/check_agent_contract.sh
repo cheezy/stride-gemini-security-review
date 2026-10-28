@@ -150,7 +150,7 @@
 #         modes/result-file.md, modes/reproduction.md, modes/considerations.md
 #         and the extension root, all beside this script's lib/)
 # Exit code: 0 when every pin and self-test holds; 1 when any fails, or when
-#            the agent file is missing or empty, or the policy, command,
+#            the agent file is missing, empty or unreadable, or the policy, command,
 #            README, skill or a mode file is missing.
 set -uo pipefail
 export LC_ALL=C
@@ -226,8 +226,9 @@ fi
 # --- W2284: the SECURITY_RESULT_PATH result file -----------------------------
 # Upstream's eleven 9d41e46 pins, nine byte-identical. Two name Claude Code's
 # Bash procedure and are replaced: "the path is always single-quoted" becomes
-# "write_file is limited to the result path" (no shell command receives the
-# path), and "the temp file is named for cleanup" keeps its label with
+# "write_file is limited to the result path" (the only shell command that
+# receives the path is the single-quoted `test ! -L` link check, which runs
+# before the write), and "the temp file is named for cleanup" keeps its label with
 # write_file's own temp name. The Gemini pins after them hold the rest of the
 # ported text, the write_file wording and its tools entry; the absent pins
 # refuse the Claude Code wording and the shell temp-file procedure coming back.
@@ -264,7 +265,7 @@ pin_in RESULT_MODE "the file is written through write_file"            'write th
 pin_in RESULT_MODE "write_file is limited to the result path"          'call it once, with the accepted `SECURITY_RESULT_PATH` verbatim as `file_path` and the document as `content`, and never call it for any other path, nor write the result through `run_shell_command`.'
 pin_in RESULT_MODE "nothing else is written, never outside .stride/"   '**write nothing else in the repository, and never outside `.stride/`**; the only other thing you create is a probe copy outside the repository, under **Operational constraints**.'
 pin_in RESULT_MODE "a symlinked or non-regular target is a write failure" 'If the target exists and is a symbolic link or not a regular file, or its `.stride` directory is a symbolic link, treat it as a write failure: `write_file` would follow the link and write wherever it points.'
-pin_in RESULT_MODE "the link check runs before the write"              "test ! -L '<path>' && test ! -L '<dir>'"
+pin_in RESULT_MODE "the link check runs before the write"              "Check both with one \`run_shell_command\` call before \`write_file\`, \`test ! -L '<path>' && test ! -L '<dir>'\`"
 pin_in RESULT_MODE "a missing parent directory is created"             '`write_file` creates a missing parent directory'
 pin_in RESULT_MODE "a denied or rejected write is a write failure"     'denies it in headless (`gemini -p`) mode: a denied, rejected or failed call is a write failure'
 pin "write_file is in the agent tools"                  '  - write_file'
@@ -778,7 +779,7 @@ SECTION_FILES=(); SECTION_LABELS=(); SECTION_PREFIXES=(); SECTION_SHA256=(); SEC
 section() { SECTION_FILES+=("$1"); SECTION_LABELS+=("$2"); SECTION_PREFIXES+=("$3"); SECTION_SHA256+=("$4"); SECTION_EDIT_FROM+=("$5"); SECTION_EDIT_TO+=("$6"); }
 section RESULT_MODE 'the result-file write bullet is exactly the pinned one' \
   '- **Path accepted ' \
-  5ad67fd13931061045d2b3abb8a77622d5eb0cfcc197da869409e2b872de17b5 'Check both with one' 'Check either with one'
+  5ad67fd13931061045d2b3abb8a77622d5eb0cfcc197da869409e2b872de17b5 'removes it on failure' 'deletes it on failure'
 section AGENT 'the read-only bullet is exactly the pinned one' \
   '- **You are read-only on the working tree.**' \
   035cfffeddac5dd6305fdbd519c14ff59d1c49e90a181d8cf62e6d082e68f5cf '`glob`. Use `run_shell_command`' '`glob`.  Use `run_shell_command`'
@@ -897,7 +898,7 @@ done
 # file must be deny-only, name no `modes`, scope every rule to this subagent,
 # and name only tools the agent has. Line-based, after stripping CR.
 
-POLICY_SHA256=56e2f2bab602dd6f799b6d5587b24573b235006e1f1cd7912998ad7fb3aae83a
+POLICY_SHA256=e783c802493b9035b5299f6e99e3ef07b1f1f917b6ff678e99fee293d94ed3ad
 POLICY_PIN_LABELS=(); POLICY_PIN_NEEDLES=()
 policy_pin() { POLICY_PIN_LABELS+=("$1"); POLICY_PIN_NEEDLES+=("$2"); }
 policy_pin "the policy denies git commands that change state" '[^\x00]*?(?:(?<![A-Za-z0-9_.-])|(?<=\\[nt]))git(?= |\\t)[^\x00]*?(?<= |\\t)(add|am|apply|bisect|branch|bundle|checkout|checkout-index|cherry-pick|clean|clone|commit|commit-tree|config|credential|daemon|difftool|fast-import|fetch|filter-branch|format-patch|gc|hash-object|init|lfs|maintenance|merge|mergetool|mv|notes|pack-refs|prune|pull|push|read-tree|rebase|reflog|remote|repack|replace|reset|restore|revert|rm|send-email|sparse-checkout|stash|submodule|switch|symbolic-ref|tag|update-index|update-ref|worktree|write-tree)(?![A-Za-z0-9_./-])'
@@ -2284,6 +2285,23 @@ FAIL: the Step 4 schema sentence is exactly the pinned one -- found 0 lines" COM
     expect "an unreadable agent file exits non-zero with a message" 1 "FAIL: agent file is not readable" "$TMP/unreadable.md"
   fi
   chmod 600 "$TMP/unreadable.md"
+
+  # A grep that errors on the template-token scan (exit 2) must fail the pin,
+  # never read as "no tokens". The stub stands first on PATH for one child
+  # only, fails just the scan's `grep -noE` call and hands every other call to
+  # the real grep.
+  real_grep="$(command -v grep)"
+  mkdir -p "$TMP/stubgrep"
+  printf '#!/bin/sh\n[ "$1" = -noE ] && exit 2\nexec "%s" "$@"\n' "$real_grep" > "$TMP/stubgrep/grep"
+  chmod 755 "$TMP/stubgrep/grep"
+  out="$(PATH="$TMP/stubgrep:$PATH" CHECK_AGENT_CONTRACT_CHILD=1 bash "$SELF" "$base" 2>&1)"; rc=$?
+  if [ "$rc" -ne 1 ]; then
+    echo "FAIL: self-test: a grep error on the template-token scan fails the pin -- exit $rc, wanted 1"; fail=1
+  elif ! printf '%s\n' "$out" | grep -qF -- "grep could not read the agent (exit 2)"; then
+    echo "FAIL: self-test: a grep error on the template-token scan fails the pin -- output lacks: grep could not read the agent (exit 2)"; fail=1
+  else
+    echo "ok: self-test: a grep error on the template-token scan fails the pin"
+  fi
 fi
 
 if [ "$fail" -ne 0 ]; then

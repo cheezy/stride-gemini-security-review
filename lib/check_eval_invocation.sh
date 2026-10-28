@@ -14,7 +14,8 @@
 #   1. --dry-run prints the invocation: @security-reviewer in the -p directive,
 #      `-e stride-gemini-security-review`, `-o stream-json`,
 #      `--approval-mode default`, `--skip-trust`, a scratch GEMINI_CLI_HOME
-#      outside the repo, and none of the fixture's text in argv.
+#      outside the repo, and none of the fixture's text in argv. A TMPDIR
+#      mktemp cannot use stops the run with exit 2 and names mktemp.
 #   2. A fake CLI records what run_eval.sh actually executed (matrix row 0):
 #      the agent selection, an empty cwd outside the repo, a scratch home holding
 #      only an allow-listed copy of this extension (no credentials, no fixtures),
@@ -28,15 +29,20 @@
 #   4. With no usable auth in the environment the run refuses with exit 2 and
 #      never dispatches; a Google login and an incomplete Vertex setup refuse too.
 #   5. An unauthenticated CLI (exit 41) stops the run non-zero with a clear
-#      message (matrix row 2).
+#      message (matrix row 2), and an untrusted workspace (exit 55) stops it
+#      with exit 2 and `Bail out!`.
 #   6. A turn limit (exit 53) fails the fixture.
 #   7. The main model answering without delegating, delegating to another
 #      agent, or a failed invoke_agent result, each fails the fixture.
 #   8. Break-its on a scratch copy of run_eval.sh (matrix row 6): dropping the
 #      agent selection from the invocation fails the checks above, and dropping
-#      the agent-name filter lets another agent's answer score. Reverting the
-#      prompt to the bare `mode: considerations` and `mode: full_file` lines
-#      fails the tag checks (W2278).
+#      the agent-name filter lets another agent's answer score. Adding the
+#      prompt to -p fails the fixture-not-in-argv pins, echoing the key fails
+#      the key-never-printed pin, and dropping the exit-55 case or the mktemp
+#      guard fails their pins. Reverting the prompt to the bare
+#      `mode: considerations` and `mode: full_file` lines fails the tag checks
+#      (W2278). Dropping packs/ or modes/ from the copy's allow-list, or
+#      removing or widening its --include-directories, fails the W2482 pins.
 #   9. An empty fixture set reports zero cases and exits 2 instead of passing
 #      (matrix row 3), as does --only with no match.
 #  10. --only <prefix> keeps exactly the matching rows.
@@ -366,6 +372,21 @@ sed "s/  printf '# auth: %s\\\\n' \"\$AUTH_MODE\"/&; printf '# key: %s\\\\n' \"\
 check "break-it: the key is now echoed"              contains "$EV/lib/run_eval.sh" "printf '# key: %s"
 RUNNER="$EV/lib/run_eval.sh" run_case brk_key FIXTURES_DIR="$ROOT_DIR/fixtures" EVAL_EXTENSION_DIR="$ROOT_DIR" -- --fixture "$FIXTURE"
 check "break-it: the key-never-printed pin now fails" fails none_has_sentinel "$TMP/brk_key.out" "$TMP/logs-brk_key"
+
+# The exit-55 pins: drop the untrusted-workspace case from the exit-code
+# switch, and the bail-out pin must fail.
+sed '/^    55) printf .workspace not trusted/d' "$RUN_EVAL" > "$EV/lib/run_eval.sh"
+check "break-it: the exit-55 case was removed"       lacks "$EV/lib/run_eval.sh" 'workspace not trusted (gemini exit 55'
+RUNNER="$EV/lib/run_eval.sh" run_case brk_55 FAKE_EXIT=55 FIXTURES_DIR="$ROOT_DIR/fixtures" EVAL_EXTENSION_DIR="$ROOT_DIR" -- --fixture "$FIXTURE"
+check "break-it: without it the exits-2 pin fails"   fails test "$(rc_of brk_55)" -eq 2
+check "break-it: ... and the bail-out pin"           fails contains "$TMP/brk_55.out" "Bail out! workspace not trusted"
+
+# The mktemp pins: drop the guard on the scratch-directory mktemp, and the pin
+# that names the failure must fail.
+sed 's/ || die "mktemp could not create a scratch directory"//' "$RUN_EVAL" > "$EV/lib/run_eval.sh"
+check "break-it: the mktemp guard was removed"       lacks "$EV/lib/run_eval.sh" 'mktemp could not create a scratch directory'
+RUNNER="$EV/lib/run_eval.sh" run_case brk_tmp TMPDIR="$TMP/no-such-dir" FIXTURES_DIR="$ROOT_DIR/fixtures" EVAL_EXTENSION_DIR="$ROOT_DIR" -- --dry-run --fixture "$FIXTURE"
+check "break-it: without it the names-mktemp pin fails" fails contains "$TMP/brk_tmp.out" "mktemp could not create a scratch directory"
 
 # W2278: the full_file prompt opens with its tag too, and reverting run_eval.sh
 # to the bare `mode:` lines it sent before a01cb19 fails both tag checks.

@@ -54,7 +54,7 @@ subagent = "security-reviewer"
 commandRegex = '[^\x00]*?(?:(?<![A-Za-z0-9_.-])|(?<=\\[nt]))git(?= |\\t)[^\x00]*?(?<= |\\t)diff(?=[ ]*("|\\n|;|&|\|))'
 decision = "deny"
 priority = 900
-denyMessage = "security-reviewer never runs a bare git diff against the working tree, which rewrites .git/index. Nothing ran; use git diff --cached or a commit-to-commit diff, or grade by reading."
+denyMessage = "security-reviewer never runs a bare git diff against the working tree, which rewrites .git/index. Nothing ran; use git --no-pager --no-lazy-fetch -c core.fsmonitor=false -c gpg.program=false -c gpg.ssh.program=false -c gpg.x509.program=false diff --cached (or diff <commit> <commit>) --no-ext-diff --no-textconv --submodule=short, or grade by reading."
 
 # A git option that writes a file.
 [[rule]]

@@ -53,7 +53,7 @@ The extension supports two scan modes — pick the one that matches the question
 /security-review --full --json   # full scan, raw JSON output
 ```
 
-`--full` and `--json` compose freely with each other, with path arguments, and with the other flags — the full flag inventory is summarized under Customization below, with `commands/security-review.md` owning the semantics.
+`--full` and `--json` compose freely with each other, with path arguments, and with the other flags — the full flag inventory is summarized under Customization below, with `commands/security-review.toml` owning the semantics.
 
 ## When NOT to invoke
 
@@ -95,7 +95,7 @@ If your organization has a stricter policy that wants those classes flagged, ext
 
 ## Customization
 
-The command's current flag surface, one line per flag — parsing and full semantics are owned by `commands/security-review.md`, not restated here:
+The command's current flag surface, one line per flag — parsing and full semantics are owned by `commands/security-review.toml`, not restated here:
 
 - `--full` — review every tracked file in the repo instead of the diff against HEAD.
 - `--json` — raw JSON output for piping into tools.
@@ -144,7 +144,7 @@ This is the sanctioned surface `stride-gemini` looks for; keeping the command na
 ## What this skill does NOT cover
 
 - The actual analysis methodology (in `agents/security-reviewer.md`, with its rule packs in `packs/` and mode rules in `modes/`).
-- The command pipeline (in `commands/security-review.md`).
+- The command pipeline (in `commands/security-review.toml`).
 - Output rendering details (in the same command file).
 
 This skill is the *surface* description. Implementation lives in the files referenced above.

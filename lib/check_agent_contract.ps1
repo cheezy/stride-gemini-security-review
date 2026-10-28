@@ -48,7 +48,7 @@
 #   pwsh -NoProfile -File lib\check_agent_contract.ps1 [agent [policy [command [readme [skill [result-mode [repro-mode [cons-mode [root]]]]]]]]]
 #   (or from Windows PowerShell 5.1:  powershell -File lib\check_agent_contract.ps1)
 # Exit code: 0 when every pin and self-test holds; 1 when any fails, or when
-#            the agent file is missing or empty, or the policy, command,
+#            the agent file is missing, empty or unreadable, or the policy, command,
 #            README, skill or a mode file is missing.
 
 param([string]$AgentPath = '', [string]$PolicyPath = '', [string]$CommandPath = '', [string]$ReadmePath = '', [string]$SkillPath = '',
@@ -231,7 +231,7 @@ $FilePins = @(
     ,@('RESULT_MODE', 'write_file is limited to the result path', 'call it once, with the accepted `SECURITY_RESULT_PATH` verbatim as `file_path` and the document as `content`, and never call it for any other path, nor write the result through `run_shell_command`.')
     ,@('RESULT_MODE', 'nothing else is written, never outside .stride/', '**write nothing else in the repository, and never outside `.stride/`**; the only other thing you create is a probe copy outside the repository, under **Operational constraints**.')
     ,@('RESULT_MODE', 'a symlinked or non-regular target is a write failure', 'If the target exists and is a symbolic link or not a regular file, or its `.stride` directory is a symbolic link, treat it as a write failure: `write_file` would follow the link and write wherever it points.')
-    ,@('RESULT_MODE', 'the link check runs before the write', 'test ! -L ''<path>'' && test ! -L ''<dir>''')
+    ,@('RESULT_MODE', 'the link check runs before the write', 'Check both with one `run_shell_command` call before `write_file`, `test ! -L ''<path>'' && test ! -L ''<dir>''`')
     ,@('RESULT_MODE', 'a missing parent directory is created', '`write_file` creates a missing parent directory')
     ,@('RESULT_MODE', 'a denied or rejected write is a write failure', 'denies it in headless (`gemini -p`) mode: a denied, rejected or failed call is a write failure')
     ,@('CONS_MODE', 'a credential location is redacted', 'or names a location where one lives, such as a file path, an env var, or a vault or secrets-manager reference')
@@ -522,7 +522,7 @@ $D378Pins = @(
 # Each ported line pinned whole (SECTION_*): key, label, prefix, SHA-256,
 # then the one-word edit the self-tests make inside the line.
 $SectionPins = @(
-    ,@('RESULT_MODE', 'the result-file write bullet is exactly the pinned one', '- **Path accepted ', '5ad67fd13931061045d2b3abb8a77622d5eb0cfcc197da869409e2b872de17b5', 'Check both with one', 'Check either with one')
+    ,@('RESULT_MODE', 'the result-file write bullet is exactly the pinned one', '- **Path accepted ', '5ad67fd13931061045d2b3abb8a77622d5eb0cfcc197da869409e2b872de17b5', 'removes it on failure', 'deletes it on failure')
     ,@('AGENT', 'the read-only bullet is exactly the pinned one', '- **You are read-only on the working tree.**', '035cfffeddac5dd6305fdbd519c14ff59d1c49e90a181d8cf62e6d082e68f5cf', '`glob`. Use `run_shell_command`', '`glob`.  Use `run_shell_command`')
     ,@('REPRO_MODE', 'the probe intro bullet is exactly the pinned one', '**Reproduce only in a temporary copy', 'fe6997885bed90b6cee5763821c66078ca7a40df49164604ddaaa85c44ffe3a2', 'not a fuzzer', 'not a tester')
     ,@('REPRO_MODE', 'the probe prose paragraph is exactly the pinned one', 'Copy files into it, never link them', '5e4d829927a003345e152e611e08f16a2e433298858af6719fc3ae5901c702f3', '`tar` recreates a link', '`tar` follows a link')
@@ -617,7 +617,7 @@ $PolicyPins = @(
 )
 
 $D377P = 'git --no-pager --no-lazy-fetch -c core.fsmonitor=false -c gpg.program=false -c gpg.ssh.program=false -c gpg.x509.program=false'
-$PolicySha256 = '56e2f2bab602dd6f799b6d5587b24573b235006e1f1cd7912998ad7fb3aae83a'
+$PolicySha256 = 'e783c802493b9035b5299f6e99e3ef07b1f1f917b6ff678e99fee293d94ed3ad'
 $W2278Tag = '`/security-review invocation, mode: <mode>`'
 $TemplateTokenRe = '\$\{[A-Za-z0-9_]+\}'
 $ModeKeys = @('RESULT_MODE', 'REPRO_MODE', 'CONS_MODE')
