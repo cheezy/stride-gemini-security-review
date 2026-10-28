@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-27
+
 ### Fixed
 
 - **`skills/security-review-essentials/SKILL.md` and `fixtures/EXPECTED.md` name the command file this extension ships.** Three skill lines and one fixture note pointed at `commands/security-review.md`, upstream's Claude Code file; the Gemini command is `commands/security-review.toml`. The wrong path dates from 0.1.0.
